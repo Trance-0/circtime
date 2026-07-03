@@ -1,0 +1,587 @@
+/* ── Global ────────────────────────────────────────────────────────── */
+
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border: #334155;
+  --accent: #3b82f6;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── App layout ───────────────────────────────────────────────────── */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.app-title {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.app-logo {
+  color: var(--accent);
+}
+
+.app-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Sidebar left (controls + legend) ─────────────────────────────── */
+
+.sidebar-left {
+  width: 260px;
+  min-width: 220px;
+  padding: 20px 16px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Sidebar right (details panel) ────────────────────────────────── */
+
+.sidebar-right {
+  width: 360px;
+  min-width: 300px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-secondary);
+  overflow-y: auto;
+}
+
+/* ── Radar ────────────────────────────────────────────────────────── */
+
+.radar-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.radar-wrapper {
+  position: relative;
+  max-width: 650px;
+  max-height: 650px;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.uptime-radar-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.arc-segment {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.arc-segment:hover {
+  opacity: 0.9;
+}
+
+.ring-label {
+  font-size: 8px;
+  fill: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.ring-label-small {
+  font-size: 7px;
+}
+
+.center-title {
+  font-size: 14px;
+  fill: var(--text-primary);
+  font-weight: 700;
+}
+.center-subtitle {
+  font-size: 8px;
+  fill: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.segment-label {
+  font-size: 7px;
+  fill: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+}
+.segment-label-small {
+  font-size: 6px;
+}
+
+/* ── Tooltip ──────────────────────────────────────────────────────── */
+
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: #1e293bee;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  z-index: 100;
+  min-width: 180px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.tooltip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tooltip-row {
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* ── Control panel ────────────────────────────────────────────────── */
+
+.control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.control-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.control-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.control-btn:hover {
+  background: #475569;
+  color: var(--text-primary);
+}
+.control-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.control-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.control-toggle input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+/* ── Legend ────────────────────────────────────────────────────────── */
+
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.legend-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.legend-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legend-section-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.legend-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.legend-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.legend-gradient-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-gradient {
+  display: flex;
+  flex: 1;
+  height: 14px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.legend-gradient-cell {
+  flex: 1;
+}
+
+.legend-gradient-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.legend-rings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.legend-ring-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ── Details panel ────────────────────────────────────────────────── */
+
+.details-panel {
+  padding: 20px 16px;
+}
+
+.details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.details-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.details-status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.details-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.details-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.details-close:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.details-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.meta-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.meta-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.uptime-bar-bg {
+  width: 80px;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.uptime-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.details-section {
+  margin-bottom: 20px;
+}
+
+.details-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+
+/* ── Dependencies ─────────────────────────────────────────────────── */
+
+.dep-chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dep-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-tertiary);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dep-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* ── Incidents ────────────────────────────────────────────────────── */
+
+.incidents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.incident-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid #1e293b;
+}
+
+.incident-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.incident-time {
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.incident-msg {
+  color: var(--text-secondary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.incident-latency {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* ── History cylinder ─────────────────────────────────────────────── */
+
+.history-cylinder {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-cylinder-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.history-cylinder-svg {
+  width: 100%;
+  height: 200px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+}
+
+.history-cylinder-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.history-cylinder-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 6px;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+
+@media (max-width: 1100px) {
+  .sidebar-left {
+    width: 200px;
+    min-width: 180px;
+    padding: 16px 12px;
+  }
+  .sidebar-right {
+    width: 300px;
+    min-width: 260px;
+  }
+}
+
+@media (max-width: 800px) {
+  .app-body {
+    flex-direction: column;
+  }
+  .sidebar-left {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    min-height: auto;
+    padding: 12px;
+    gap: 20px;
+  }
+  .sidebar-right {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+  .radar-wrapper {
+    max-width: 450px;
+    max-height: 450px;
+  }
+}
