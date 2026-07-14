@@ -1,13 +1,10 @@
 /**
  * Legend.tsx
  *
- * Explains the hue / saturation / brightness mapping:
- *   Hue        → infrastructure identity
- *   Saturation → uptime percentage
- *   Brightness → current status
+ * Explains the hue / saturation / brightness mapping.
  */
 
-import { getInfrastructures } from './mockData';
+import { getInfrastructures } from './dataStore';
 import { nodeColor } from './statusColor';
 import type { NodeStatus } from './types';
 
@@ -25,7 +22,6 @@ export function Legend() {
     <div className="legend">
       <h3 className="legend-title">Legend</h3>
 
-      {/* Infrastructure hues */}
       <div className="legend-section">
         <span className="legend-section-label">Infrastructure (Hue)</span>
         <div className="legend-items">
@@ -41,7 +37,6 @@ export function Legend() {
         </div>
       </div>
 
-      {/* Status → brightness */}
       <div className="legend-section">
         <span className="legend-section-label">Status (Brightness)</span>
         <div className="legend-items">
@@ -57,9 +52,8 @@ export function Legend() {
         </div>
       </div>
 
-      {/* Saturation explanation */}
       <div className="legend-section">
-        <span className="legend-section-label">Uptime → Saturation</span>
+        <span className="legend-section-label">Uptime to Saturation</span>
         <div className="legend-gradient-row">
           <span className="legend-gradient-label">0%</span>
           <div className="legend-gradient">
@@ -78,13 +72,12 @@ export function Legend() {
         </div>
       </div>
 
-      {/* Ring layout */}
       <div className="legend-section">
         <span className="legend-section-label">Ring Layout</span>
         <div className="legend-rings">
-          <span className="legend-ring-label">Inner → Infrastructure</span>
-          <span className="legend-ring-label">Middle → Services</span>
-          <span className="legend-ring-label">Outer → Network (optional)</span>
+          <span className="legend-ring-label">Inner to Infrastructure</span>
+          <span className="legend-ring-label">Middle to Services</span>
+          <span className="legend-ring-label">Outer to Network (optional)</span>
         </div>
       </div>
     </div>

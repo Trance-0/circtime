@@ -1,22 +1,13 @@
 /**
  * DetailsPanel.tsx
  *
- * Side panel showing detailed information about a selected node:
- *   - Name, type, current status
- *   - Total uptime percentage
- *   - Average & p95 latency
- *   - Last check time
- *   - Dependency chain
- *   - Recent incidents
- *   - History cylinder visualization
+ * Side panel showing detailed information about a selected node.
  */
 
 import type { MonitorNode, TimeRange } from './types';
-import { getNode, getHueFor } from './mockData';
+import { getNode, getHueFor } from './dataStore';
 import { statusBadgeColor, nodeColor } from './statusColor';
 import { HistoryCylinder } from './HistoryCylinder';
-
-// ── Helpers ─────────────────────────────────────────────────────────
 
 function formatTime(ms: number): string {
   const d = new Date(ms);
@@ -39,8 +30,6 @@ function statusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-// ── Component ───────────────────────────────────────────────────────
-
 interface Props {
   node: MonitorNode;
   timeRange: TimeRange;
@@ -51,12 +40,10 @@ export function DetailsPanel({ node, timeRange, onClose }: Props) {
   const hue = getHueFor(node);
   const accentColor = nodeColor(hue, node.uptimePercent, 'up');
 
-  // Dependency chain
   const deps = node.dependsOn
     .map((id) => getNode(id))
     .filter((n): n is MonitorNode => !!n);
 
-  // Recent incidents (last 10 non-up entries)
   const incidents = node.history
     .filter((h) => h.status !== 'up')
     .slice(-10)
@@ -73,7 +60,7 @@ export function DetailsPanel({ node, timeRange, onClose }: Props) {
           <h2 className="details-title">{node.name}</h2>
         </div>
         <button className="details-close" onClick={onClose}>
-          ✕
+          x
         </button>
       </div>
 
@@ -117,7 +104,6 @@ export function DetailsPanel({ node, timeRange, onClose }: Props) {
         </div>
       </div>
 
-      {/* Dependency chain */}
       {deps.length > 0 && (
         <div className="details-section">
           <h3 className="details-section-title">Dependencies</h3>
@@ -135,13 +121,11 @@ export function DetailsPanel({ node, timeRange, onClose }: Props) {
         </div>
       )}
 
-      {/* History cylinder */}
       <div className="details-section">
         <h3 className="details-section-title">History</h3>
         <HistoryCylinder history={node.history} timeRange={timeRange} />
       </div>
 
-      {/* Recent incidents */}
       {incidents.length > 0 && (
         <div className="details-section">
           <h3 className="details-section-title">Recent Incidents</h3>

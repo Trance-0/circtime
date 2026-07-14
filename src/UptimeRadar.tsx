@@ -1,46 +1,22 @@
 /**
  * UptimeRadar.tsx
  *
- * The main concentric-ring SVG visualization.
- *
- * Layout geometry:
- *   Ring 0 (inner):  Infrastructure providers / machines
- *   Ring 1 (middle): Services deployed under each infrastructure
- *   Ring 2 (outer):  Network / routing layer (optional per-infra)
- *
- * Angular allocation:
- *   Each infrastructure gets a proportional angular fan based on
- *   its total descendant count (services + network nodes).
- *   Within each fan, children share equal angular slices.
- *
- * Color mapping:
- *   Hue       — stable per infrastructure
- *   Saturation — uptime percentage
- *   Lightness  — current status (up/degraded/down/unknown)
+ * Main concentric-ring SVG visualization.
  */
 
 import { useMemo, useState, useCallback } from 'react';
-import type {
-  MonitorNode,
-  InfrastructureNode,
-  TooltipData,
-  SortBy,
-  ArcSegment,
-} from './types';
+import type { TooltipData, SortBy, ArcSegment } from './types';
 import {
   getInfrastructures,
   getServicesFor,
   getNetworkFor,
   getNode,
-} from './mockData';
+} from './dataStore';
 import { nodeColor, nodeColorHover, nodeStroke } from './statusColor';
 
-// ── Constants ───────────────────────────────────────────────────────
-
-const SVG_SIZE = 600;                  // viewBox dimension
+const SVG_SIZE = 600;
 const CENTER = SVG_SIZE / 2;
 
-// Ring radii
 const INFRA_INNER = 90;
 const INFRA_OUTER = 140;
 const SVC_INNER = 150;
@@ -48,20 +24,12 @@ const SVC_OUTER = 220;
 const NET_INNER = 230;
 const NET_OUTER = 270;
 
-const GAP_ANGLE = 0.02;               // radians gap between segments
+const GAP_ANGLE = 0.02;
 const TWO_PI = Math.PI * 2;
-
-// ── Arc path builder ────────────────────────────────────────────────
 
 /**
  * Build an SVG arc path for a ring segment.
- * Angles: 0 = top (12 o'clock), clockwise positive.
- *
- * The path traces:
- *   outer arc (startAngle → endAngle)
- *   line to inner arc
- *   inner arc (endAngle → startAngle)
- *   close
+ * Angles are radians, with 0 at 12 o'clock and clockwise positive.
  */
 function arcPath(
   cx: number,
@@ -71,9 +39,6 @@ function arcPath(
   startAngle: number,
   endAngle: number,
 ): string {
-  // Convert from "clockwise from top" to standard SVG coordinates
-  // SVG: 0 = right (3 o'clock), counter-clockwise positive
-  // We want: 0 = top, clockwise ⇒ rotate -90° and keep clockwise
   const toSvg = (a: number) => a - Math.PI / 2;
 
   const a1 = toSvg(startAngle);
@@ -101,8 +66,6 @@ function arcPath(
   ].join(' ');
 }
 
-// ── Label position ──────────────────────────────────────────────────
-
 function labelPosition(
   cx: number,
   cy: number,
@@ -119,15 +82,16 @@ function labelPosition(
   };
 }
 
-// ── Layout computation ──────────────────────────────────────────────
+function statusLightness(status: string): number {
+  if (status === 'up') return 55;
+  if (status === 'degraded') return 38;
+  if (status === 'down') return 18;
+  return 30;
+}
 
-function computeSegments(
-  sortBy: SortBy,
-  showNetwork: boolean,
-): ArcSegment[] {
-  let infras = getInfrastructures();
+function computeSegments(sortBy: SortBy, showNetwork: boolean): ArcSegment[] {
+  const infras = [...getInfrastructures()];
 
-  // Sort infrastructures
   if (sortBy === 'name') {
     infras.sort((a, b) => a.name.localeCompare(b.name));
   } else if (sortBy === 'uptime') {
@@ -137,25 +101,22 @@ function computeSegments(
     infras.sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2));
   }
 
-  // Count total weight for proportional angular allocation
-  // Weight = 1 (infra) + services.length + (showNetwork ? networkNodes.length : 0)
   const weights = infras.map((inf) => {
     const svcCount = getServicesFor(inf.id).length;
     const netCount = showNetwork ? getNetworkFor(inf.id).length : 0;
-    return Math.max(svcCount + netCount, 1); // at least 1 so empty infras get space
+    return Math.max(svcCount + netCount, 1);
   });
-  const totalWeight = weights.reduce((s, w) => s + w, 0);
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
 
   const segments: ArcSegment[] = [];
   let angle = 0;
 
-  for (let i = 0; i < infras.length; i++) {
+  for (let i = 0; i < infras.length; i += 1) {
     const inf = infras[i];
     const infraAngle = (weights[i] / totalWeight) * (TWO_PI - infras.length * GAP_ANGLE);
     const infraStart = angle;
     const infraEnd = angle + infraAngle;
 
-    // Infrastructure arc (full fan)
     segments.push({
       nodeId: inf.id,
       ring: 'infrastructure',
@@ -165,16 +126,15 @@ function computeSegments(
       endAngle: infraEnd,
       hue: inf.hue,
       saturation: 10 + (inf.uptimePercent / 100) * 75,
-      lightness: inf.status === 'up' ? 55 : inf.status === 'degraded' ? 38 : inf.status === 'down' ? 18 : 30,
+      lightness: statusLightness(inf.status),
     });
 
-    // Services — divide the fan equally among services
     const services = getServicesFor(inf.id);
     const networkNodes = showNetwork ? getNetworkFor(inf.id) : [];
 
     if (services.length > 0) {
       const svcArc = infraAngle / services.length;
-      for (let j = 0; j < services.length; j++) {
+      for (let j = 0; j < services.length; j += 1) {
         const svc = services[j];
         segments.push({
           nodeId: svc.id,
@@ -185,15 +145,14 @@ function computeSegments(
           endAngle: infraStart + (j + 1) * svcArc,
           hue: inf.hue,
           saturation: 10 + (svc.uptimePercent / 100) * 75,
-          lightness: svc.status === 'up' ? 55 : svc.status === 'degraded' ? 38 : svc.status === 'down' ? 18 : 30,
+          lightness: statusLightness(svc.status),
         });
       }
     }
 
-    // Network — partial outer arcs only where applicable
     if (networkNodes.length > 0) {
       const netArc = infraAngle / networkNodes.length;
-      for (let j = 0; j < networkNodes.length; j++) {
+      for (let j = 0; j < networkNodes.length; j += 1) {
         const net = networkNodes[j];
         segments.push({
           nodeId: net.id,
@@ -204,7 +163,7 @@ function computeSegments(
           endAngle: infraStart + (j + 1) * netArc,
           hue: inf.hue,
           saturation: 10 + (net.uptimePercent / 100) * 75,
-          lightness: net.status === 'up' ? 55 : net.status === 'degraded' ? 38 : net.status === 'down' ? 18 : 30,
+          lightness: statusLightness(net.status),
         });
       }
     }
@@ -215,8 +174,6 @@ function computeSegments(
   return segments;
 }
 
-// ── Dependency line positions ───────────────────────────────────────
-
 function segmentCenter(seg: ArcSegment): { x: number; y: number } {
   const midAngle = (seg.startAngle + seg.endAngle) / 2 - Math.PI / 2;
   const midR = (seg.innerRadius + seg.outerRadius) / 2;
@@ -225,8 +182,6 @@ function segmentCenter(seg: ArcSegment): { x: number; y: number } {
     y: CENTER + midR * Math.sin(midAngle),
   };
 }
-
-// ── Component ───────────────────────────────────────────────────────
 
 interface Props {
   sortBy: SortBy;
@@ -250,14 +205,12 @@ export function UptimeRadar({
     [sortBy, showNetwork],
   );
 
-  // Build a map for dependency line lookup
   const segmentMap = useMemo(() => {
-    const m = new Map<string, ArcSegment>();
-    for (const s of segments) m.set(s.nodeId, s);
-    return m;
+    const map = new Map<string, ArcSegment>();
+    for (const segment of segments) map.set(segment.nodeId, segment);
+    return map;
   }, [segments]);
 
-  // Dependency lines
   const depLines = useMemo(() => {
     const lines: { x1: number; y1: number; x2: number; y2: number; hue: number }[] = [];
     for (const seg of segments) {
@@ -311,11 +264,7 @@ export function UptimeRadar({
   }, [onTooltip]);
 
   return (
-    <svg
-      viewBox={`0 0 ${SVG_SIZE} ${SVG_SIZE}`}
-      className="uptime-radar-svg"
-    >
-      {/* Ring labels */}
+    <svg viewBox={`0 0 ${SVG_SIZE} ${SVG_SIZE}`} className="uptime-radar-svg">
       <text x={CENTER} y={CENTER - INFRA_INNER + 18} textAnchor="middle" className="ring-label">
         Infrastructure
       </text>
@@ -328,7 +277,6 @@ export function UptimeRadar({
         </text>
       )}
 
-      {/* Center circle */}
       <circle cx={CENTER} cy={CENTER} r={INFRA_INNER - 10} fill="#111827" stroke="#1f2937" strokeWidth={1} />
       <text x={CENTER} y={CENTER - 8} textAnchor="middle" className="center-title">
         circtime
@@ -337,7 +285,6 @@ export function UptimeRadar({
         uptime radar
       </text>
 
-      {/* Dependency lines (drawn under segments) */}
       {depLines.map((line, i) => (
         <line
           key={`dep-${i}`}
@@ -351,7 +298,6 @@ export function UptimeRadar({
         />
       ))}
 
-      {/* Arc segments */}
       {segments.map((seg) => {
         const node = getNode(seg.nodeId);
         if (!node) return null;
@@ -361,9 +307,7 @@ export function UptimeRadar({
         const fill = isHovered || isSelected
           ? nodeColorHover(seg.hue, node.uptimePercent, node.status)
           : nodeColor(seg.hue, node.uptimePercent, node.status);
-        const stroke = isSelected
-          ? '#ffffff'
-          : nodeStroke(seg.hue, node.status);
+        const stroke = isSelected ? '#ffffff' : nodeStroke(seg.hue, node.status);
 
         return (
           <path
@@ -381,10 +325,9 @@ export function UptimeRadar({
         );
       })}
 
-      {/* Segment labels — only for arcs wide enough */}
       {segments.map((seg) => {
         const angularSpan = seg.endAngle - seg.startAngle;
-        if (angularSpan < 0.15) return null; // too narrow for a label
+        if (angularSpan < 0.15) return null;
 
         const node = getNode(seg.nodeId);
         if (!node) return null;
@@ -392,9 +335,7 @@ export function UptimeRadar({
         const midR = (seg.innerRadius + seg.outerRadius) / 2;
         const pos = labelPosition(CENTER, CENTER, midR, seg.startAngle, seg.endAngle);
 
-        // Rotate label to follow the arc
         let rot = pos.rotation;
-        // Flip if on the bottom half so text reads left-to-right
         if (rot > 90 && rot < 270) rot += 180;
 
         return (
@@ -408,12 +349,11 @@ export function UptimeRadar({
             className={`segment-label ${seg.ring === 'network' ? 'segment-label-small' : ''}`}
             pointerEvents="none"
           >
-            {node.name.length > 18 ? node.name.slice(0, 16) + '…' : node.name}
+            {node.name.length > 18 ? `${node.name.slice(0, 16)}...` : node.name}
           </text>
         );
       })}
 
-      {/* Down indicator markers */}
       {segments
         .filter((seg) => {
           const node = getNode(seg.nodeId);

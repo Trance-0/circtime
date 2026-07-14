@@ -4,9 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/build-config.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/build-config.mjs",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:sites": "node scripts/check-sites.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",
@@ -16,7 +19,9 @@
     "vite": "^8.1.3"
   },
   "dependencies": {
+    "@types/three": "^0.185.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "three": "^0.185.1"
   }
 }

@@ -12,6 +12,19 @@ dist
 dist-ssr
 *.local
 
+# Generated monitor data
+public/circtime-config.json
+public/circtime-admin.json
+public/uptime-history.json
+public/uptime-latest.json
+
+# Local package manager/runtime caches
+.pnpm-home
+.npm-cache
+.tmp-home
+.cache
+pnpm-lock.yaml
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

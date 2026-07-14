@@ -34,6 +34,9 @@ export interface BaseNode {
   name: string;
   type: NodeType;
   status: NodeStatus;
+  hue?: number;
+  /** Visual size hint: 1 = largest padding/smallest section, 5 = smallest padding/largest section. */
+  renderPadding?: number;
   url: string;                // Monitoring URL (empty for now)
   uptimePercent: number;      // 0–100
   avgLatencyMs: number;

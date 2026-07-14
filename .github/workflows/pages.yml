@@ -1,0 +1,122 @@
+name: Monitor and deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # GitHub Actions schedules use UTC. config.yml defaults to the same cadence.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: circtime-pages
+  cancel-in-progress: false
+
+jobs:
+  monitor-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare admin token
+        shell: bash
+        env:
+          CONFIGURED_ADMIN_TOKEN: ${{ secrets.CIRCTIME_ADMIN_TOKEN }}
+        run: |
+          yaml_token="$(node --input-type=module -e 'import { readConfig } from "./scripts/config-utils.mjs"; console.log(readConfig(process.cwd()).settings.admin_token || "")')"
+          if [ -n "$CONFIGURED_ADMIN_TOKEN" ]; then
+            echo "CIRCTIME_ADMIN_TOKEN=$CONFIGURED_ADMIN_TOKEN" >> "$GITHUB_ENV"
+            echo "CIRCTIME_ADMIN_TOKEN_SOURCE=secret" >> "$GITHUB_ENV"
+          elif [ -n "$yaml_token" ]; then
+            echo "CIRCTIME_ADMIN_TOKEN_SOURCE=config" >> "$GITHUB_ENV"
+          else
+            token="$(node -e 'console.log(require("crypto").randomBytes(32).toString("base64url"))')"
+            echo "CIRCTIME_ADMIN_TOKEN=$token" >> "$GITHUB_ENV"
+            echo "CIRCTIME_ADMIN_TOKEN_SOURCE=generated" >> "$GITHUB_ENV"
+            printf '%s\n' "$token" > circtime-admin-token.txt
+          fi
+
+      - name: Upload generated admin token
+        if: env.CIRCTIME_ADMIN_TOKEN_SOURCE == 'generated'
+        uses: actions/upload-artifact@v4
+        with:
+          name: circtime-admin-token
+          path: circtime-admin-token.txt
+          retention-days: 7
+
+      - name: Restore monitoring history
+        shell: bash
+        run: |
+          mkdir -p public
+          git fetch origin uptime-history --depth=1 || true
+          git fetch origin gh-pages --depth=1 || true
+          if git show origin/uptime-history:uptime-history.json.gz > /tmp/uptime-history.json.gz 2>/dev/null; then
+            gzip -dc /tmp/uptime-history.json.gz > public/uptime-history.json
+          elif git show origin/uptime-history:uptime-history.json > public/uptime-history.json 2>/dev/null; then
+            echo "Restored uncompressed history from uptime-history"
+          else
+            git show origin/gh-pages:uptime-history.json > public/uptime-history.json || true
+          fi
+
+      - name: Check configured URLs and TCP ports
+        run: npm run check:sites
+
+      - name: Persist one-year monitoring history
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          state_dir="$(mktemp -d)"
+          gzip -9 -c public/uptime-history.json > "$state_dir/uptime-history.json.gz"
+          cp public/uptime-latest.json "$state_dir/"
+          cd "$state_dir"
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b uptime-history
+          git add uptime-history.json.gz uptime-latest.json
+          git commit -m "Update uptime history"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git push --force origin uptime-history
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build dashboard
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: monitor-and-build
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
