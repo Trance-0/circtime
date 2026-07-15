@@ -48,6 +48,21 @@ const HISTORY_LAYER_GAP = 0.09;
 const HISTORY_Z_PRESENT = -0.12;
 const LIGHTNESS_MIN = 0.1;
 const LIGHTNESS_MAX = 0.9;
+const INNER_RING_START = 0.68;
+const RING_GAP = 0.1;
+const RING_RADIAL_TRAVEL = 0.08;
+const INFRASTRUCTURE_THICKNESS_BASE = 0.42;
+const SERVICE_THICKNESS_BASE = 0.41;
+const NETWORK_THICKNESS_BASE = 0.18;
+const MAX_RADIAL_SCALE = 0.42 + 5 * 0.15 + 0.12;
+const INFRASTRUCTURE_BAND_WIDTH = INFRASTRUCTURE_THICKNESS_BASE * MAX_RADIAL_SCALE + RING_RADIAL_TRAVEL;
+const SERVICE_BAND_START = INNER_RING_START + INFRASTRUCTURE_BAND_WIDTH + RING_GAP;
+const SERVICE_BAND_WIDTH = SERVICE_THICKNESS_BASE * MAX_RADIAL_SCALE + RING_RADIAL_TRAVEL;
+const NETWORK_BAND_START = SERVICE_BAND_START + SERVICE_BAND_WIDTH + RING_GAP;
+const NETWORK_BAND_WIDTH = NETWORK_THICKNESS_BASE * MAX_RADIAL_SCALE + RING_RADIAL_TRAVEL;
+const FOCUSED_PLANAR_SCALE = 1.04;
+const FOCUSED_DEPTH_SCALE = 1.45;
+const FOCUS_EASING = 0.12;
 const RESOLUTION_STEPS_MS = [
   60 * 1000,
   5 * 60 * 1000,
@@ -65,10 +80,6 @@ const RESOLUTION_STEPS_MS = [
   90 * 24 * 60 * 60 * 1000,
   366 * 24 * 60 * 60 * 1000,
 ];
-
-function parentId(node: MonitorNode): string {
-  return node.type === 'infrastructure' ? node.id : node.infrastructureId;
-}
 
 function latencyLightness(latencyMs: number, status: MonitorNode['status'], maxTimeoutMs: number): number {
   if (status === 'unknown') return 0.28;
@@ -140,10 +151,6 @@ function angularInset(node: MonitorNode): number {
   return 0.006 + stableUnit(node, 'angle-inset') * 0.008;
 }
 
-function radialJitter(node: MonitorNode): number {
-  return (stableUnit(node, 'radius') - 0.5) * 0.52;
-}
-
 function radialThickness(node: MonitorNode, base: number): number {
   const size = stableRenderPadding(node);
   return base * (0.42 + size * 0.15 + stableUnit(node, 'width') * 0.12);
@@ -170,6 +177,13 @@ function derivedRadialThickness(node: MonitorNode, base: number): number {
   return base * (0.42 + size * 0.15 + stableUnit(node, 'width') * 0.12);
 }
 
+function radialBounds(node: MonitorNode, base: number, bandStart: number, bandWidth: number) {
+  const thickness = Math.min(derivedRadialThickness(node, base), bandWidth);
+  const availableTravel = Math.max(0, bandWidth - thickness);
+  const innerRadius = bandStart + stableUnit(node, 'radius') * availableTravel;
+  return { innerRadius, outerRadius: innerRadius + thickness };
+}
+
 function networkRenderWeight(node: MonitorNode, infrastructureId: string, siblingCount: number): number {
   const fixed = clampRenderPadding(node.renderPadding);
   if (fixed !== undefined) return renderWeight(node);
@@ -184,7 +198,7 @@ function insetAngles(node: MonitorNode, start: number, end: number) {
   return { startAngle: start + inset, endAngle: end - inset };
 }
 
-function computeSegments(sortBy: SortBy, showNetwork: boolean, selectedNodeId: string | null): SegmentDef[] {
+function computeSegments(sortBy: SortBy, showNetwork: boolean): SegmentDef[] {
   const infras = [...getInfrastructures()];
   if (sortBy === 'name') infras.sort((a, b) => a.name.localeCompare(b.name));
   if (sortBy === 'uptime') infras.sort((a, b) => a.uptimePercent - b.uptimePercent);
@@ -199,8 +213,6 @@ function computeSegments(sortBy: SortBy, showNetwork: boolean, selectedNodeId: s
   const serviceHues = new Map(
     globalServices.map((service, index) => [service.id, Math.round((index / Math.max(globalServices.length, 1)) * 360)]),
   );
-  const selectedNode = selectedNodeId ? getNode(selectedNodeId) : null;
-  const selectedParent = selectedNode ? parentId(selectedNode) : null;
   const weights = infras.map((infra) => {
     const services = getServicesFor(infra.id);
     const network = showNetwork ? getNetworkFor(infra.id) : [];
@@ -210,7 +222,7 @@ function computeSegments(sortBy: SortBy, showNetwork: boolean, selectedNodeId: s
       0,
     );
     const base = Math.max(0.6, serviceWeight + networkWeight * 0.18);
-    return selectedParent === infra.id ? base * 2.2 : base;
+    return base;
   });
   const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
   const gap = 0.018;
@@ -223,17 +235,20 @@ function computeSegments(sortBy: SortBy, showNetwork: boolean, selectedNodeId: s
     const span = (weights[i] / totalWeight) * usable;
     const start = cursor;
     const end = cursor + span;
-    const isExpanded = selectedParent === infra.id;
-    const radialLift = isExpanded ? 0.22 : 0;
-
     const infraAngles = insetAngles(infra, start, end);
-    const infraInner = 0.7 + radialJitter(infra) * 0.38;
-    const infraOuter = infraInner + derivedRadialThickness(infra, 0.42) + radialLift;
+    // Every node varies inside its ring's reserved envelope. The envelopes use
+    // the maximum possible size/width scale, so adjacent node types cannot overlap.
+    const infraBounds = radialBounds(
+      infra,
+      INFRASTRUCTURE_THICKNESS_BASE,
+      INNER_RING_START,
+      INFRASTRUCTURE_BAND_WIDTH,
+    );
     segments.push({
       node: infra,
       ring: 'infrastructure',
-      innerRadius: infraInner,
-      outerRadius: infraOuter,
+      innerRadius: infraBounds.innerRadius,
+      outerRadius: infraBounds.outerRadius,
       startAngle: infraAngles.startAngle,
       endAngle: infraAngles.endAngle,
       hue: infra.hue ?? 0,
@@ -243,7 +258,6 @@ function computeSegments(sortBy: SortBy, showNetwork: boolean, selectedNodeId: s
     const serviceWeight = services.reduce((sum, service) => sum + renderWeight(service), 0);
     let serviceAngle = start;
     services.forEach((service) => {
-      const selectedBoost = selectedNodeId === service.id ? 0.17 : 0;
       const hue = serviceHues.get(service.id) ?? 0;
       const serviceSpan = serviceWeight > 0 ? span * (renderWeight(service) / serviceWeight) : span;
       const serviceStart = serviceAngle;
@@ -251,13 +265,17 @@ function computeSegments(sortBy: SortBy, showNetwork: boolean, selectedNodeId: s
 
       serviceAngle = serviceEnd;
       const serviceAngles = insetAngles(service, serviceStart, serviceEnd);
-      const serviceInner = 1.08 + radialLift + radialJitter(service) * 0.24;
-      const serviceOuter = serviceInner + derivedRadialThickness(service, 0.41) + selectedBoost;
+      const serviceBounds = radialBounds(
+        service,
+        SERVICE_THICKNESS_BASE,
+        SERVICE_BAND_START,
+        SERVICE_BAND_WIDTH,
+      );
       segments.push({
         node: service,
         ring: 'service',
-        innerRadius: serviceInner,
-        outerRadius: serviceOuter,
+        innerRadius: serviceBounds.innerRadius,
+        outerRadius: serviceBounds.outerRadius,
         startAngle: serviceAngles.startAngle,
         endAngle: serviceAngles.endAngle,
         hue,
@@ -278,13 +296,17 @@ function computeSegments(sortBy: SortBy, showNetwork: boolean, selectedNodeId: s
       const networkEnd = networkStart + networkSpan;
       networkAngle = networkEnd;
       const networkAngles = insetAngles(networkNode, networkStart, networkEnd);
-      const networkInner = 1.68 + radialLift + radialJitter(networkNode) * 0.18;
-      const networkOuter = networkInner + derivedRadialThickness(networkNode, 0.18);
+      const networkBounds = radialBounds(
+        networkNode,
+        NETWORK_THICKNESS_BASE,
+        NETWORK_BAND_START,
+        NETWORK_BAND_WIDTH,
+      );
       segments.push({
         node: networkNode,
         ring: 'network',
-        innerRadius: networkInner,
-        outerRadius: networkOuter,
+        innerRadius: networkBounds.innerRadius,
+        outerRadius: networkBounds.outerRadius,
         startAngle: networkAngles.startAngle,
         endAngle: networkAngles.endAngle,
         hue: networkNode.hue ?? infra.hue ?? 0,
@@ -494,11 +516,11 @@ export function UptimeRadar3D({
 
   const { showDiskOutline, maxTimeoutMs } = getRuntimeSettings();
   const segments = useMemo(
-    () => computeSegments(sortBy, showNetwork, selectedNodeId),
-    [dataVersion, selectedNodeId, showNetwork, sortBy],
+    () => computeSegments(sortBy, showNetwork),
+    [dataVersion, showNetwork, sortBy],
   );
   const radarDiameter = useMemo(() => {
-    const defaultSegments = computeSegments(sortBy, showNetwork, null);
+    const defaultSegments = computeSegments(sortBy, showNetwork);
     return Math.max(1, ...defaultSegments.map((segment) => segment.outerRadius * 2));
   }, [dataVersion, showNetwork, sortBy]);
 
@@ -621,10 +643,12 @@ export function UptimeRadar3D({
         const isSelected = Boolean(selectedId && node?.id === selectedId);
         const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         mesh.renderOrder = selectedId ? (isSelected ? 34 : 24) : 28;
+        mesh.userData.targetPlanarScale = isSelected ? FOCUSED_PLANAR_SCALE : 1;
+        mesh.userData.targetDepthScale = isSelected ? FOCUSED_DEPTH_SCALE : 1;
+        mesh.userData.targetOpacity = selectedId ? (isSelected ? 1 : 0.88) : 0.9;
         for (const material of materials) {
           if (node && material instanceof THREE.MeshBasicMaterial) {
             material.color.copy(colorFor(node, hue, maxTimeoutMs));
-            material.opacity = selectedId ? (isSelected ? 1 : 0.88) : 0.9;
             material.depthTest = true;
             material.depthWrite = true;
             material.needsUpdate = true;
@@ -964,6 +988,26 @@ export function UptimeRadar3D({
         }
         if (centerRef.current) centerRef.current.position.set(0, 0, 0);
       }
+      for (const mesh of meshRef.current) {
+        const targetPlanarScale = Number(mesh.userData.targetPlanarScale ?? 1);
+        const targetDepthScale = Number(mesh.userData.targetDepthScale ?? 1);
+        mesh.scale.x = THREE.MathUtils.lerp(mesh.scale.x, targetPlanarScale, FOCUS_EASING);
+        mesh.scale.y = THREE.MathUtils.lerp(mesh.scale.y, targetPlanarScale, FOCUS_EASING);
+        mesh.scale.z = THREE.MathUtils.lerp(mesh.scale.z, targetDepthScale, FOCUS_EASING);
+        if (
+          Math.abs(mesh.scale.x - targetPlanarScale) < 0.0005
+          && Math.abs(mesh.scale.z - targetDepthScale) < 0.0005
+        ) {
+          mesh.scale.set(targetPlanarScale, targetPlanarScale, targetDepthScale);
+        }
+        const targetOpacity = Number(mesh.userData.targetOpacity ?? 0.9);
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const material of materials) {
+          if (material instanceof THREE.MeshBasicMaterial) {
+            material.opacity = THREE.MathUtils.lerp(material.opacity, targetOpacity, FOCUS_EASING);
+          }
+        }
+      }
       if (centerRef.current) {
         centerRef.current.rotation.x += 0.0018;
         centerRef.current.rotation.y += 0.0012;
@@ -1006,20 +1050,23 @@ export function UptimeRadar3D({
       const layerDepth = segment.ring === 'service' ? 0.08 : 0.05;
       const geometry = new THREE.ExtrudeGeometry(shape, { depth: layerDepth, bevelEnabled: false });
       geometry.translate(0, 0, segment.ring === 'network' ? 0.05 : 0);
-      const isSelected = selectedNodeId === segment.node.id;
       const material = new THREE.MeshBasicMaterial({
         color: colorFor(segment.node, segment.hue, maxTimeoutMs),
         transparent: true,
-        opacity: selectedNodeId ? (isSelected ? 1 : 0.88) : 0.9,
+        opacity: 0.9,
         side: THREE.DoubleSide,
         depthTest: true,
         depthWrite: true,
       });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.renderOrder = selectedNodeId ? (isSelected ? 34 : 24) : 28;
+      const isSelected = selectedRef.current === segment.node.id;
+      mesh.renderOrder = selectedRef.current ? (isSelected ? 34 : 24) : 28;
       mesh.userData.node = segment.node;
       mesh.userData.ring = segment.ring;
       mesh.userData.hue = segment.hue;
+      mesh.userData.targetPlanarScale = isSelected ? FOCUSED_PLANAR_SCALE : 1;
+      mesh.userData.targetDepthScale = isSelected ? FOCUSED_DEPTH_SCALE : 1;
+      mesh.userData.targetOpacity = selectedRef.current ? (isSelected ? 1 : 0.88) : 0.9;
       meshRef.current.push(mesh);
       group.add(mesh);
 
@@ -1032,7 +1079,7 @@ export function UptimeRadar3D({
         })));
       }
     }
-  }, [maxTimeoutMs, segments, selectedNodeId, showDiskOutline]);
+  }, [maxTimeoutMs, segments, showDiskOutline]);
 
   useEffect(() => {
     const historyGroup = historyGroupRef.current;
