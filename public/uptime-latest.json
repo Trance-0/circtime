@@ -1,0 +1,47 @@
+{
+  "generatedAt": "2026-07-15T13:01:41.332Z",
+  "checks": {
+    "github-pages": {
+      "timestamp": 1784120501332,
+      "status": "up",
+      "latencyMs": 264,
+      "statusCode": 200,
+      "message": "Synthetic dev fixture"
+    },
+    "personal-site": {
+      "timestamp": 1784120501332,
+      "status": "up",
+      "latencyMs": 374,
+      "statusCode": 200,
+      "message": "Synthetic dev fixture"
+    },
+    "home-server": {
+      "timestamp": 1784120501332,
+      "status": "up",
+      "latencyMs": 142,
+      "statusCode": 200,
+      "message": "Synthetic dev fixture"
+    },
+    "nextcloud": {
+      "timestamp": 1784120501332,
+      "status": "up",
+      "latencyMs": 424,
+      "statusCode": 200,
+      "message": "Synthetic dev fixture"
+    },
+    "portainer": {
+      "timestamp": 1784120501332,
+      "status": "up",
+      "latencyMs": 1028,
+      "statusCode": 200,
+      "message": "Synthetic dev fixture"
+    },
+    "reverse-proxy": {
+      "timestamp": 1784120501332,
+      "status": "up",
+      "latencyMs": 225,
+      "statusCode": 200,
+      "message": "Synthetic dev fixture"
+    }
+  }
+}
