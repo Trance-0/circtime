@@ -64,6 +64,14 @@ After that, other users can click **Use this template**, create their own copy, 
 - `dev` is based directly on `main` and adds a prefilled sample `config.yml` plus synthetic uptime history for visual testing.
 - Do not merge the dev fixture files into `main` or use them as deployment history.
 
+After committing changes to `main`, update `dev` without copying its fixture data back into production. If a local ignored `config.yml` exists on `main`, move it outside the worktree before running the command because `dev` supplies its own tracked fixture config.
+
+```bash
+npm run sync:dev
+```
+
+The sync command merges `main`, verifies that the three dev fixtures are unchanged, and fails if `dev` differs from `main` anywhere else.
+
 ## Editing `config.yml`
 
 `config.yml` has two top-level sections: `settings` and `infrastructure`.

@@ -10,7 +10,8 @@
     "prebuild": "node scripts/build-config.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "check:sites": "node scripts/check-sites.mjs"
+    "check:sites": "node scripts/check-sites.mjs",
+    "sync:dev": "node scripts/sync-dev.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",
