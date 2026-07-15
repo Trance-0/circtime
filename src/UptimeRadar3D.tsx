@@ -7,10 +7,12 @@ import {
   getInfrastructures,
   getNetworkFor,
   getNode,
+  getRuntimeSettings,
   getServicesFor,
 } from './dataStore';
 
 interface Props {
+  dataVersion: number;
   sortBy: SortBy;
   showNetwork: boolean;
   selectedNodeId: string | null;
@@ -40,12 +42,12 @@ const MIN_TIME_STEP_MS = 60 * 1000;
 const MAX_TIME_STEP_MS = 366 * 24 * 60 * 60 * 1000;
 const DEFAULT_TIME_STEP_MS = 24 * 60 * 60 * 1000;
 const SCROLL_ZOOM_BASE = 1.22;
-const STATUS_LIGHTNESS = { up: 0.54, degraded: 0.34, down: 0.16, unknown: 0.28 };
-const STATUS_SATURATION = { up: 0.72, degraded: 0.52, down: 0.24, unknown: 0.04 };
 const DEFAULT_CAMERA_Z = 6.1;
 const DEFAULT_ROTATION_X = 0;
 const HISTORY_LAYER_GAP = 0.09;
 const HISTORY_Z_PRESENT = -0.12;
+const LIGHTNESS_MIN = 0.1;
+const LIGHTNESS_MAX = 0.9;
 const RESOLUTION_STEPS_MS = [
   60 * 1000,
   5 * 60 * 1000,
@@ -68,19 +70,29 @@ function parentId(node: MonitorNode): string {
   return node.type === 'infrastructure' ? node.id : node.infrastructureId;
 }
 
-function colorFor(node: MonitorNode, hue: number): THREE.Color {
+function latencyLightness(latencyMs: number, status: MonitorNode['status'], maxTimeoutMs: number): number {
+  if (status === 'unknown') return 0.28;
+  if (status === 'down') return LIGHTNESS_MIN;
+  const ratio = THREE.MathUtils.clamp(Math.max(latencyMs, 0) / Math.max(maxTimeoutMs, 1), 0, 1);
+  return THREE.MathUtils.lerp(LIGHTNESS_MAX, LIGHTNESS_MIN, ratio);
+}
+
+function colorFor(node: MonitorNode, hue: number, maxTimeoutMs: number): THREE.Color {
   const saturation = node.status === 'unknown'
-    ? 0.28
-    : Math.max(0.16, Math.min(0.86, (node.uptimePercent / 100) * STATUS_SATURATION[node.status]));
-  const lightness = STATUS_LIGHTNESS[node.status];
+    ? 0.08
+    : THREE.MathUtils.lerp(0.18, 0.9, THREE.MathUtils.clamp(node.uptimePercent / 100, 0, 1));
+  const latency = node.history[node.history.length - 1]?.latencyMs ?? node.avgLatencyMs;
+  const lightness = latencyLightness(latency, node.status, maxTimeoutMs);
   return new THREE.Color().setHSL(hue / 360, saturation, lightness);
 }
 
-function historyColor(entry: HistoryEntry, hue: number): THREE.Color {
-  if (entry.status === 'unknown') return new THREE.Color().setHSL(hue / 360, 0.2, 0.24);
-  if (entry.status === 'down') return new THREE.Color().setHSL(hue / 360, 0.26, 0.18);
-  if (entry.status === 'degraded') return new THREE.Color().setHSL(hue / 360, 0.54, 0.36);
-  return new THREE.Color().setHSL(hue / 360, 0.62, 0.48);
+function historyColor(entry: HistoryEntry, hue: number, maxTimeoutMs: number): THREE.Color {
+  const saturation = entry.status === 'unknown' ? 0.08 : entry.status === 'down' ? 0.24 : 0.72;
+  return new THREE.Color().setHSL(
+    hue / 360,
+    saturation,
+    latencyLightness(entry.latencyMs, entry.status, maxTimeoutMs),
+  );
 }
 
 function annularShape(innerRadius: number, outerRadius: number, startAngle: number, endAngle: number) {
@@ -319,8 +331,8 @@ function sampleHistoryAtResolution(history: HistoryEntry[], stepMs: number, limi
   return sampled.slice(-Math.max(limit, 1));
 }
 
-function historyLayerZ(index: number, total: number): number {
-  return HISTORY_Z_PRESENT - Math.max(total - 1 - index, 0) * HISTORY_LAYER_GAP;
+function historyLayerZ(index: number, total: number, spacing = HISTORY_LAYER_GAP): number {
+  return HISTORY_Z_PRESENT - Math.max(total - 1 - index, 0) * spacing;
 }
 
 function nearestHistoryEntry(history: HistoryEntry[], timestamp: number): HistoryEntry | undefined {
@@ -433,6 +445,7 @@ function makeStarfield(hash: string): THREE.Points {
 }
 
 export function UptimeRadar3D({
+  dataVersion,
   sortBy,
   showNetwork,
   selectedNodeId,
@@ -451,7 +464,22 @@ export function UptimeRadar3D({
   const centerRef = useRef<THREE.Mesh | null>(null);
   const meshRef = useRef<THREE.Mesh[]>([]);
   const historyMeshesRef = useRef<THREE.Object3D[]>([]);
-  const dragRef = useRef({ active: false, mode: 'rotate' as 'rotate' | 'time', x: 0, y: 0, spin: 0.0018, rangeIndex: 1, layerDistance: 1, targetLayerDistance: 1, timeStepMs: DEFAULT_TIME_STEP_MS, targetTimeStepMs: DEFAULT_TIME_STEP_MS, historyOffset: 0, targetHistoryOffset: 0 });
+  const dragRef = useRef({
+    active: false,
+    resetting: false,
+    mode: 'rotate' as 'rotate' | 'time',
+    x: 0,
+    y: 0,
+    spin: 0.0018,
+    rangeIndex: 1,
+    layerDistance: 1,
+    targetLayerDistance: 1,
+    historySpan: 0,
+    timeStepMs: DEFAULT_TIME_STEP_MS,
+    targetTimeStepMs: DEFAULT_TIME_STEP_MS,
+    historyOffset: 0,
+    targetHistoryOffset: 0,
+  });
   const gestureRef = useRef({
     pointers: new Map<number, { x: number; y: number }>(),
     moved: false,
@@ -464,10 +492,15 @@ export function UptimeRadar3D({
   const timeRangeRef = useRef(timeRange);
   const cursorRef = useRef('');
 
+  const { showDiskOutline, maxTimeoutMs } = getRuntimeSettings();
   const segments = useMemo(
     () => computeSegments(sortBy, showNetwork, selectedNodeId),
-    [sortBy, showNetwork, selectedNodeId],
+    [dataVersion, selectedNodeId, showNetwork, sortBy],
   );
+  const radarDiameter = useMemo(() => {
+    const defaultSegments = computeSegments(sortBy, showNetwork, null);
+    return Math.max(1, ...defaultSegments.map((segment) => segment.outerRadius * 2));
+  }, [dataVersion, showNetwork, sortBy]);
 
   useEffect(() => {
     selectedRef.current = selectedNodeId;
@@ -501,13 +534,15 @@ export function UptimeRadar3D({
 
     const group = new THREE.Group();
     group.rotation.x = DEFAULT_ROTATION_X;
+    const initialQuaternion = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(DEFAULT_ROTATION_X, 0, 0),
+    );
     group.add(makeStarfield(getConfigHash()));
     scene.add(group);
     groupRef.current = group;
 
     const historyGroup = new THREE.Group();
     historyGroup.visible = false;
-    historyGroup.scale.z = 0;
     group.add(historyGroup);
     historyGroupRef.current = historyGroup;
 
@@ -528,14 +563,16 @@ export function UptimeRadar3D({
     centerRef.current = core;
     group.add(core);
 
-    const ringGroup = new THREE.Group();
-    for (let r = 0.72; r <= 2.62; r += 0.38) {
-      const curve = new THREE.EllipseCurve(0, 0, r, r, 0, Math.PI * 2, false, 0);
-      const points = curve.getPoints(160);
-      const geometry = new THREE.BufferGeometry().setFromPoints(points.map((point) => new THREE.Vector3(point.x, point.y, -0.018)));
-      ringGroup.add(new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({ color: 0x526071, transparent: true, opacity: 0.14 })));
+    if (showDiskOutline) {
+      const ringGroup = new THREE.Group();
+      for (let r = 0.72; r <= 2.62; r += 0.38) {
+        const curve = new THREE.EllipseCurve(0, 0, r, r, 0, Math.PI * 2, false, 0);
+        const points = curve.getPoints(160);
+        const geometry = new THREE.BufferGeometry().setFromPoints(points.map((point) => new THREE.Vector3(point.x, point.y, -0.018)));
+        ringGroup.add(new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({ color: 0x526071, transparent: true, opacity: 0.14 })));
+      }
+      group.add(ringGroup);
     }
-    group.add(ringGroup);
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -545,6 +582,8 @@ export function UptimeRadar3D({
       const rect = mount.getBoundingClientRect();
       rendererRef.current.setSize(rect.width, rect.height, false);
       cameraRef.current.aspect = rect.width / Math.max(rect.height, 1);
+      cameraRef.current.position.z = DEFAULT_CAMERA_Z;
+      cameraRef.current.fov = Math.min(78, 42 * Math.max(1, 1.1 / cameraRef.current.aspect));
       cameraRef.current.updateProjectionMatrix();
     }
 
@@ -584,7 +623,7 @@ export function UptimeRadar3D({
         mesh.renderOrder = selectedId ? (isSelected ? 34 : 24) : 28;
         for (const material of materials) {
           if (node && material instanceof THREE.MeshBasicMaterial) {
-            material.color.copy(colorFor(node, hue));
+            material.color.copy(colorFor(node, hue, maxTimeoutMs));
             material.opacity = selectedId ? (isSelected ? 1 : 0.88) : 0.9;
             material.depthTest = true;
             material.depthWrite = true;
@@ -597,27 +636,16 @@ export function UptimeRadar3D({
     function resetView() {
       selectedRef.current = null;
       onSelectNode(null);
-      if (groupRef.current) {
-        groupRef.current.rotation.x = DEFAULT_ROTATION_X;
-        groupRef.current.rotation.y = 0;
-        groupRef.current.rotation.z = 0;
-      }
-      dragRef.current.historyOffset = 0;
+      dragRef.current.active = false;
+      dragRef.current.resetting = true;
+      dragRef.current.spin = 0;
       dragRef.current.targetHistoryOffset = 0;
-      dragRef.current.timeStepMs = DEFAULT_TIME_STEP_MS;
       dragRef.current.targetTimeStepMs = DEFAULT_TIME_STEP_MS;
       historyResolutionRef.current = DEFAULT_TIME_STEP_MS;
       setHistoryResolutionMs(DEFAULT_TIME_STEP_MS);
-      dragRef.current.layerDistance = timeStepToLayerDistance(DEFAULT_TIME_STEP_MS);
       dragRef.current.targetLayerDistance = timeStepToLayerDistance(DEFAULT_TIME_STEP_MS);
-      if (historyGroupRef.current) {
-        historyGroupRef.current.scale.z = 0;
-        historyGroupRef.current.position.z = 0;
-        historyGroupRef.current.visible = false;
-      }
       if (centerRef.current) centerRef.current.position.set(0, 0, 0);
       applyLiveMaterials(null);
-      dragRef.current.spin = 0.0018;
       setHistoryMode(false);
     }
     function stepTimeRange(direction: number) {
@@ -643,34 +671,43 @@ export function UptimeRadar3D({
       return Math.max(1, rulerHistory().length);
     }
 
-    function currentHistoryPosition(total: number, scaleZ: number, offsetZ: number) {
-      if (scaleZ < 0.005) return Math.max(total - 1, 0);
-      const localPlaneZ = -offsetZ / Math.max(scaleZ, 0.001);
-      const oldestZ = historyLayerZ(0, total);
+    function visibleLayerSpacing(total: number) {
+      const requested = HISTORY_LAYER_GAP
+        * dragRef.current.historySpan
+        * dragRef.current.layerDistance
+        * (1.72 + (selectedRef.current ? 0.18 : 0));
+      const visibleGaps = Math.max(Math.min(total, HISTORY_WINDOW_RADIUS * 2 + 1) - 1, 1);
+      return Math.min(requested, (radarDiameter * 0.92) / visibleGaps);
+    }
+
+    function currentHistoryPosition(total: number, spacing: number, offsetZ: number) {
+      if (spacing < 0.0005) return Math.max(total - 1, 0);
+      const localPlaneZ = -offsetZ;
+      const oldestZ = historyLayerZ(0, total, spacing);
       return THREE.MathUtils.clamp(
-        (localPlaneZ - oldestZ) / HISTORY_LAYER_GAP,
+        (localPlaneZ - oldestZ) / spacing,
         0,
         Math.max(total - 1, 0),
       );
     }
 
-    function historyOffsetForPosition(position: number, total: number, scaleZ: number) {
-      return -historyLayerZ(position, total) * Math.max(scaleZ, 0.001);
+    function historyOffsetForPosition(position: number, total: number, spacing: number) {
+      return -historyLayerZ(position, total, spacing);
     }
 
-    function clampHistoryOffset(offset: number, total: number, scaleZ: number) {
-      const minOffset = historyOffsetForPosition(Math.max(total - 1, 0), total, scaleZ);
-      const maxOffset = historyOffsetForPosition(0, total, scaleZ);
+    function clampHistoryOffset(offset: number, total: number, spacing: number) {
+      const minOffset = historyOffsetForPosition(Math.max(total - 1, 0), total, spacing);
+      const maxOffset = historyOffsetForPosition(0, total, spacing);
       return THREE.MathUtils.clamp(offset, Math.min(minOffset, maxOffset), Math.max(minOffset, maxOffset));
     }
 
     function snapTargetToNearestHistorySlot(strength: number) {
       const total = visibleHistoryTotal();
-      const scaleZ = historyGroupRef.current?.scale.z ?? 1;
-      dragRef.current.targetHistoryOffset = clampHistoryOffset(dragRef.current.targetHistoryOffset, total, scaleZ);
-      const position = currentHistoryPosition(total, scaleZ, dragRef.current.targetHistoryOffset);
+      const spacing = visibleLayerSpacing(total);
+      dragRef.current.targetHistoryOffset = clampHistoryOffset(dragRef.current.targetHistoryOffset, total, spacing);
+      const position = currentHistoryPosition(total, spacing, dragRef.current.targetHistoryOffset);
       const index = Math.round(position);
-      const snappedOffset = historyOffsetForPosition(index, total, scaleZ);
+      const snappedOffset = historyOffsetForPosition(index, total, spacing);
       dragRef.current.targetHistoryOffset = THREE.MathUtils.lerp(
         dragRef.current.targetHistoryOffset,
         snappedOffset,
@@ -720,11 +757,11 @@ export function UptimeRadar3D({
 
     function scrubHistory(dx: number, dy: number) {
       const total = visibleHistoryTotal();
-      const scaleZ = historyGroupRef.current?.scale.z ?? 1;
+      const spacing = visibleLayerSpacing(total);
       dragRef.current.targetHistoryOffset = clampHistoryOffset(
         dragRef.current.targetHistoryOffset - dy * 0.018 + dx * 0.006,
         total,
-        scaleZ,
+        spacing,
       );
       const snapped = snapTargetToNearestHistorySlot(0.2);
       publishTimeCursor(snapped.position, snapped.total);
@@ -739,6 +776,7 @@ export function UptimeRadar3D({
       const isTwoFinger = event.pointerType === 'touch' && gestureRef.current.pointers.size >= 2;
       const origin = isTwoFinger ? pointerCentroid() : { x: event.clientX, y: event.clientY };
       dragRef.current.active = true;
+      dragRef.current.resetting = false;
       dragRef.current.mode = event.button === 2 || isTwoFinger ? 'time' : 'rotate';
       dragRef.current.x = origin.x;
       dragRef.current.y = origin.y;
@@ -816,12 +854,14 @@ export function UptimeRadar3D({
         return;
       }
       if (target?.node) {
+        dragRef.current.resetting = false;
         const nextSelected = target.node.id === selectedRef.current ? null : target.node.id;
         selectedRef.current = nextSelected;
         onSelectNode(nextSelected);
         applyLiveMaterials(nextSelected);
         setHistoryMode(Boolean(nextSelected));
       } else {
+        dragRef.current.resetting = false;
         selectedRef.current = null;
         onSelectNode(null);
         applyLiveMaterials(null);
@@ -831,6 +871,7 @@ export function UptimeRadar3D({
 
     function onWheel(event: WheelEvent) {
       event.preventDefault();
+      dragRef.current.resetting = false;
       const wheelUnits = event.deltaY === 0 ? 0 : event.deltaY / 120;
       dragRef.current.targetTimeStepMs = clampTimeStep(
         dragRef.current.targetTimeStepMs * Math.pow(SCROLL_ZOOM_BASE, wheelUnits),
@@ -863,7 +904,16 @@ export function UptimeRadar3D({
     function animate() {
       frame = requestAnimationFrame(animate);
       if (groupRef.current) {
-        groupRef.current.rotation.z += dragRef.current.spin;
+        if (dragRef.current.resetting) {
+          groupRef.current.quaternion.slerp(initialQuaternion, 0.085);
+          if (groupRef.current.quaternion.angleTo(initialQuaternion) < 0.0015) {
+            groupRef.current.quaternion.copy(initialQuaternion);
+            dragRef.current.resetting = false;
+            dragRef.current.spin = 0.0018;
+          }
+        } else {
+          groupRef.current.rotation.z += dragRef.current.spin;
+        }
         const sideAmount = THREE.MathUtils.clamp(
           (Math.abs(groupRef.current.rotation.x) + Math.abs(groupRef.current.rotation.y)) / 1.7,
           0,
@@ -880,21 +930,37 @@ export function UptimeRadar3D({
           dragRef.current.targetLayerDistance,
           0.1,
         );
-        const targetTunnelScale = sideAmount * (1.72 + (selectedRef.current ? 0.18 : 0)) * dragRef.current.layerDistance;
+        const targetHistorySpan = dragRef.current.resetting ? 0 : sideAmount;
+        dragRef.current.historySpan = THREE.MathUtils.lerp(
+          dragRef.current.historySpan,
+          targetHistorySpan,
+          0.08,
+        );
+        if (targetHistorySpan === 0 && dragRef.current.historySpan < 0.002) {
+          dragRef.current.historySpan = 0;
+        }
         if (historyGroupRef.current) {
-          historyGroupRef.current.scale.z = THREE.MathUtils.lerp(historyGroupRef.current.scale.z, targetTunnelScale, 0.08);
-          if (targetTunnelScale === 0 && historyGroupRef.current.scale.z < 0.002) historyGroupRef.current.scale.z = 0;
-          historyGroupRef.current.visible = historyGroupRef.current.scale.z >= 0.002;
+          historyGroupRef.current.visible = dragRef.current.historySpan >= 0.002;
           const total = visibleHistoryTotal();
-          dragRef.current.targetHistoryOffset = clampHistoryOffset(
-            dragRef.current.targetHistoryOffset,
-            total,
-            historyGroupRef.current.scale.z,
-          );
-          if (!dragRef.current.active || dragRef.current.mode !== 'time') snapTargetToNearestHistorySlot(0.34);
+          const spacing = visibleLayerSpacing(total);
+          if (dragRef.current.resetting) {
+            dragRef.current.targetHistoryOffset = 0;
+          } else {
+            dragRef.current.targetHistoryOffset = clampHistoryOffset(
+              dragRef.current.targetHistoryOffset,
+              total,
+              spacing,
+            );
+            if (!dragRef.current.active || dragRef.current.mode !== 'time') snapTargetToNearestHistorySlot(0.34);
+          }
           dragRef.current.historyOffset = THREE.MathUtils.lerp(dragRef.current.historyOffset, dragRef.current.targetHistoryOffset, 0.12);
           historyGroupRef.current.position.z = dragRef.current.historyOffset;
-          publishTimeCursor(currentHistoryPosition(total, historyGroupRef.current.scale.z, dragRef.current.historyOffset), total);
+          for (const historyMesh of historyMeshesRef.current) {
+            const timelineIndex = Number(historyMesh.userData.timelineIndex ?? total - 1);
+            const timelineTotal = Number(historyMesh.userData.timelineTotal ?? total);
+            historyMesh.position.z = historyLayerZ(timelineIndex, timelineTotal, spacing);
+          }
+          publishTimeCursor(currentHistoryPosition(total, spacing, dragRef.current.historyOffset), total);
         }
         if (centerRef.current) centerRef.current.position.set(0, 0, 0);
       }
@@ -920,7 +986,7 @@ export function UptimeRadar3D({
       renderer.dispose();
       mount.removeChild(renderer.domElement);
     };
-  }, [onInspectingTime, onSelectNode, onTimeCursor, onTimeRange, onTooltip]);
+  }, [maxTimeoutMs, onInspectingTime, onSelectNode, onTimeCursor, onTimeRange, onTooltip, radarDiameter, showDiskOutline]);
 
   useEffect(() => {
     const group = groupRef.current;
@@ -942,7 +1008,7 @@ export function UptimeRadar3D({
       geometry.translate(0, 0, segment.ring === 'network' ? 0.05 : 0);
       const isSelected = selectedNodeId === segment.node.id;
       const material = new THREE.MeshBasicMaterial({
-        color: colorFor(segment.node, segment.hue),
+        color: colorFor(segment.node, segment.hue, maxTimeoutMs),
         transparent: true,
         opacity: selectedNodeId ? (isSelected ? 1 : 0.88) : 0.9,
         side: THREE.DoubleSide,
@@ -957,14 +1023,16 @@ export function UptimeRadar3D({
       meshRef.current.push(mesh);
       group.add(mesh);
 
-      const edges = new THREE.EdgesGeometry(geometry, 20);
-      mesh.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
-        color: 0xd7dde8,
-        transparent: true,
-        opacity: 0.09,
-      })));
+      if (showDiskOutline) {
+        const edges = new THREE.EdgesGeometry(geometry, 20);
+        mesh.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
+          color: 0xd7dde8,
+          transparent: true,
+          opacity: 0.09,
+        })));
+      }
     }
-  }, [segments, selectedNodeId]);
+  }, [maxTimeoutMs, segments, selectedNodeId, showDiskOutline]);
 
   useEffect(() => {
     const historyGroup = historyGroupRef.current;
@@ -1019,8 +1087,8 @@ export function UptimeRadar3D({
         const entry = nearestHistoryEntry(item.history, timestamp);
         if (!entry) continue;
         const geometry = item.template.clone();
-        geometry.translate(0, 0, historyLayerZ(timelineIndex, timeline.length) - item.layerDepth);
-        applyGeometryColor(geometry, historyColor(entry, item.segment.hue));
+        geometry.translate(0, 0, -item.layerDepth);
+        applyGeometryColor(geometry, historyColor(entry, item.segment.hue, maxTimeoutMs));
         layerGeometries.push(geometry);
       }
       if (layerGeometries.length === 0) continue;
@@ -1041,11 +1109,13 @@ export function UptimeRadar3D({
         }),
       );
       historyMesh.renderOrder = selectedNodeId ? 42 : 12;
+      historyMesh.userData.timelineIndex = timelineIndex;
+      historyMesh.userData.timelineTotal = timeline.length;
       historyGroup.add(historyMesh);
       historyMeshesRef.current.push(historyMesh);
     }
 
     historySegments.forEach((item) => item.template.dispose());
-  }, [historyResolutionMs, historyWindowIndex, segments, selectedNodeId]);
+  }, [historyResolutionMs, historyWindowIndex, maxTimeoutMs, segments, selectedNodeId]);
   return <div ref={mountRef} className="radar-3d" />;
 }

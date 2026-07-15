@@ -7,8 +7,8 @@
  *   3. Network — routing/proxy layer (outer ring, optional)
  *
  * Each node has a status, uptime history, and belongs to an infrastructure.
- * Infrastructure determines the base hue; uptime controls saturation;
- * live/down state controls brightness.
+ * Node identity determines hue, uptime controls saturation, and latency
+ * controls brightness.
  */
 
 // ── Status ──────────────────────────────────────────────────────────

@@ -1,0 +1,56 @@
+# Copy this file to config.yml for local development, or store its contents
+# as a multiline GitHub Actions repository secret named CONFIG.
+settings:
+  page_title: "My Circtime"
+  admin_token: ""
+  show_disk_outline: true
+  max_timeout_ms: 5000
+  check_interval_minutes: 15
+  history_retention_days: 365
+  history_limit: 35040
+  concurrency: 4
+  request:
+    method: GET
+    timeout_ms: 5000
+    degraded_after_ms: 1500
+    expected_status: [200, 204, 301, 302]
+    degraded_status: [429, 500, 502, 503, 504]
+
+infrastructure:
+  - id: "github-pages"
+    name: "GitHub Pages"
+    type: "managed"
+    hue: 210
+    services:
+      - id: "personal-site"
+        name: "Personal Site"
+        hue: 145
+        render_padding: 3
+        url: "https://example.com/"
+        depends_on: []
+    network: []
+
+  - id: "home-server"
+    name: "Home Server"
+    type: "self-hosted"
+    hue: 35
+    services:
+      - id: "nextcloud"
+        name: "Nextcloud"
+        hue: 205
+        render_padding: 5
+        url: "https://cloud.example.com/status.php"
+        depends_on: [reverse-proxy]
+      - id: "portainer"
+        name: "Portainer"
+        hue: 330
+        render_padding: 1
+        url: ""
+        depends_on: [reverse-proxy]
+    network:
+      - id: "reverse-proxy"
+        name: "Reverse Proxy"
+        hue: 55
+        render_padding: 3
+        url: "https://cloud.example.com/"
+        depends_on: []

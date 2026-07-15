@@ -1,12 +1,20 @@
-import { allNodes as mockNodes } from './mockData';
 import type { InfrastructureNode, MonitorNode, NetworkNode, ServiceNode } from './types';
 
-let activeNodes: MonitorNode[] = mockNodes;
-let activeConfigHash = 'mock-config';
+export interface RuntimeSettings {
+  showDiskOutline: boolean;
+  maxTimeoutMs: number;
+}
+
+let activeNodes: MonitorNode[] = [];
+let activeConfigHash = 'empty-config';
 let activePageTitle = 'circtime';
+let activeSettings: RuntimeSettings = {
+  showDiskOutline: true,
+  maxTimeoutMs: 5000,
+};
 
 export function setActiveNodes(nodes: MonitorNode[]) {
-  activeNodes = nodes.length > 0 ? nodes : mockNodes;
+  activeNodes = nodes;
 }
 
 export function getAllNodes(): MonitorNode[] {
@@ -14,7 +22,7 @@ export function getAllNodes(): MonitorNode[] {
 }
 
 export function setConfigHash(hash: string) {
-  activeConfigHash = hash || 'mock-config';
+  activeConfigHash = hash || 'configured-data';
 }
 
 export function getConfigHash(): string {
@@ -26,6 +34,14 @@ export function setPageTitle(title: string) {
 
 export function getPageTitle(): string {
   return activePageTitle;
+}
+
+export function setRuntimeSettings(settings: Partial<RuntimeSettings>) {
+  activeSettings = { ...activeSettings, ...settings };
+}
+
+export function getRuntimeSettings(): RuntimeSettings {
+  return activeSettings;
 }
 
 export function getNode(id: string): MonitorNode | undefined {

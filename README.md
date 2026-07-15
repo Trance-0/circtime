@@ -2,11 +2,12 @@
 
 A React + TypeScript uptime-monitor visualization dashboard. circtime renders infrastructure, services, and optional network layers as a concentric uptime radar.
 
-The repository is template-ready: users only edit the root `config.yml` to define their own monitored sites. GitHub Actions checks those URLs every 15 minutes, keeps one year of history in a dedicated state branch, and deploys the static dashboard to GitHub Pages.
+The repository is template-ready. Keep the real root `config.yml` local or store its complete YAML contents in the GitHub Actions secret `CONFIG`. GitHub Actions checks those sites every 15 minutes, keeps one year of history in a dedicated state branch, and deploys the static dashboard to GitHub Pages.
 
 ## How It Works
 
-- `config.yml` is the source of truth for infrastructure, services, network layers, URLs, dependencies, hues, render sizing, and request settings.
+- `config.yml` is the first-choice source of truth. When it is absent, the scripts read the multiline `CONFIG` environment variable used by GitHub Actions.
+- `config.sample.yml` is the tracked, sanitized starting point. The real `config.yml` is ignored by Git.
 - `npm run check:sites` pings every configured URL and writes `public/uptime-history.json` plus `public/uptime-latest.json`.
 - `npm run build` generates `public/circtime-config.json` from `config.yml`, builds the Vite app, and copies the JSON files into `dist`.
 - `.github/workflows/pages.yml` restores prior history from the `uptime-history` branch, runs checks, persists the updated history as compressed state, and deploys `dist` with the official GitHub Pages Actions workflow.
@@ -18,6 +19,7 @@ Blank `url: ""` entries are allowed. They appear as `unknown` until a URL is con
 
 ```bash
 npm install
+npm run config:init
 npm run dev
 ```
 
@@ -33,12 +35,16 @@ npm run preview
 
 ## Deploy With GitHub Actions
 
-1. Push this repo to GitHub.
-2. Open the repository settings.
-3. Go to **Pages**.
-4. Set **Source** to **GitHub Actions**.
-5. Open **Actions -> Monitor and deploy GitHub Pages -> Run workflow**.
-6. After deployment, open the URL shown by the `deploy` job. A repository named `<username>.github.io` deploys at `https://<username>.github.io/`; other repositories deploy at `https://<username>.github.io/<repository>/`.
+1. Create a repository from this template and clone it.
+2. Copy `config.sample.yml` to `config.yml`, then replace the sample infrastructure and URLs. The real file is ignored and must not be force-added to Git.
+3. Set `settings.admin_token` to a long random value. If it is empty, the workflow generates a token and exposes it as the seven-day `circtime-admin-token` workflow artifact.
+4. In GitHub, open **Settings -> Secrets and variables -> Actions -> New repository secret**.
+5. Name the secret `CONFIG`. Paste the complete contents of your local `config.yml` as the secret value.
+6. Open **Settings -> Pages** and set **Source** to **GitHub Actions**.
+7. Open **Actions -> Monitor and deploy GitHub Pages -> Run workflow**.
+8. Open the URL emitted by the `deploy` job. A repository named `<username>.github.io` deploys at `https://<username>.github.io/`; other repositories deploy at `https://<username>.github.io/<repository>/`.
+
+At runtime, `config.yml` takes precedence when it exists in the checkout. Otherwise the workflow reads `secrets.CONFIG`. The workflow fails without either source rather than publishing sample or synthetic deployment data.
 
 The workflow also runs on every push to `main` and every 15 minutes by default.
 
@@ -50,7 +56,13 @@ Repository owners should enable the template flag once:
 2. Check **Template repository**.
 3. Save.
 
-After that, other users can click **Use this template**, create their own copy, edit only `config.yml`, enable Pages, and run the workflow.
+After that, other users can click **Use this template**, create their own copy, prepare `config.yml`, store it as `CONFIG`, enable Pages, and run the workflow.
+
+## Production And Dev Data
+
+- `main` never synthesizes monitoring history. Missing checks remain `unknown` until GitHub Actions records real results.
+- `dev` is based directly on `main` and adds a prefilled sample `config.yml` plus synthetic uptime history for visual testing.
+- Do not merge the dev fixture files into `main` or use them as deployment history.
 
 ## Editing `config.yml`
 
@@ -64,13 +76,15 @@ settings:
   # Prefer the CIRCTIME_ADMIN_TOKEN GitHub secret for public repos.
   # Use this YAML value only for private repos or local deployments.
   admin_token: ""
+  show_disk_outline: true
+  max_timeout_ms: 5000
   check_interval_minutes: 15
   history_retention_days: 365
   history_limit: 35040
   concurrency: 4
   request:
     method: GET
-    timeout_ms: 10000
+    timeout_ms: 5000
     degraded_after_ms: 1500
     expected_status: [200, 204, 301, 302]
     degraded_status: [429, 500, 502, 503, 504]
@@ -79,13 +93,15 @@ settings:
 Fields:
 
 - `page_title`: Browser title and title shown in the Esc settings menu.
-- `admin_token`: Optional token used to encrypt the admin debug bundle. Prefer the `CIRCTIME_ADMIN_TOKEN` GitHub secret for public repos; a token committed in YAML is visible to anyone who can read the repo.
+- `admin_token`: Token used to encrypt the admin debug bundle. Keep it inside the ignored local file and the `CONFIG` secret. The optional `CIRCTIME_ADMIN_TOKEN` secret overrides this value.
+- `show_disk_outline`: Shows or hides the concentric guides and component edge lines.
+- `max_timeout_ms`: Admin-configured upper latency and request-timeout bound. At the default `5000`, samples at or above five seconds use the minimum render lightness.
 - `check_interval_minutes`: Check cadence used by circtime. The included GitHub Actions schedule runs every 15 minutes.
 - `history_retention_days`: Removes checks older than this many days. The template keeps the most recent 365 days.
 - `history_limit`: Safety cap per node. `35040` is one check every 15 minutes for 365 days (`4 x 24 x 365`). Keep this value at least as large as the number of samples expected during the retention period.
 - `concurrency`: Number of URLs checked in parallel.
 - `method`: HTTP method for checks. Use `GET` unless your target reliably supports `HEAD`.
-- `timeout_ms`: A request that exceeds this becomes `down`.
+- `timeout_ms`: Per-request timeout. It is capped by `settings.max_timeout_ms`.
 - `degraded_after_ms`: A successful response slower than this becomes `degraded`.
 - `expected_status`: HTTP statuses that count as healthy.
 - `degraded_status`: HTTP statuses that count as degraded instead of down.
@@ -205,7 +221,6 @@ The CLI discovers certificate hostnames, probes CNAME/A/AAAA records, groups lik
 ```text
 src/
   types.ts             Data model
-  mockData.ts          Fallback generated demo data
   configuredData.ts    Converts generated config/history JSON into monitor nodes
   dataStore.ts         Runtime data source used by visualization components
   statusColor.ts       HSL color mapping

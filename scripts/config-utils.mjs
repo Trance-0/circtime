@@ -4,7 +4,7 @@ import { parseYamlLite } from './yaml-lite.mjs';
 
 const DEFAULT_REQUEST = {
   method: 'GET',
-  timeout_ms: 10000,
+  timeout_ms: 5000,
   degraded_after_ms: 1500,
   expected_status: [200, 204, 301, 302],
   degraded_status: [429, 500, 502, 503, 504],
@@ -14,6 +14,8 @@ const DEFAULT_REQUEST = {
 const DEFAULT_SETTINGS = {
   page_title: 'circtime',
   admin_token: '',
+  show_disk_outline: true,
+  max_timeout_ms: 5000,
   check_interval_minutes: 15,
   history_retention_days: 365,
   history_limit: 35040,
@@ -39,6 +41,12 @@ function asArray(value) {
 
 function asNumber(value, fallback) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function asBoolean(value, fallback) {
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return fallback;
 }
 
 function normalizeRenderPadding(raw = {}) {
@@ -120,16 +128,23 @@ function normalizeNode(raw = {}, fallbackId, inherited = {}) {
 
 export function normalizeConfig(raw) {
   const rawSettings = raw.settings && typeof raw.settings === 'object' ? raw.settings : {};
+  const maxTimeoutMs = Math.max(1, asNumber(rawSettings.max_timeout_ms, DEFAULT_SETTINGS.max_timeout_ms));
+  const request = normalizeRequest(rawSettings.request ?? {});
   const settings = {
     ...DEFAULT_SETTINGS,
     ...rawSettings,
     page_title: asString(rawSettings.page_title, DEFAULT_SETTINGS.page_title),
     admin_token: asString(rawSettings.admin_token, DEFAULT_SETTINGS.admin_token),
+    show_disk_outline: asBoolean(rawSettings.show_disk_outline, DEFAULT_SETTINGS.show_disk_outline),
+    max_timeout_ms: maxTimeoutMs,
     check_interval_minutes: asNumber(rawSettings.check_interval_minutes, DEFAULT_SETTINGS.check_interval_minutes),
     history_retention_days: Math.max(1, asNumber(rawSettings.history_retention_days, DEFAULT_SETTINGS.history_retention_days)),
     history_limit: asNumber(rawSettings.history_limit, DEFAULT_SETTINGS.history_limit),
     concurrency: Math.max(1, asNumber(rawSettings.concurrency, DEFAULT_SETTINGS.concurrency)),
-    request: normalizeRequest(rawSettings.request ?? {}),
+    request: {
+      ...request,
+      timeout_ms: Math.min(request.timeout_ms, maxTimeoutMs),
+    },
   };
 
   const infrastructure = asArray(raw.infrastructure).map((infraRaw, infraIndex) => {
@@ -168,13 +183,16 @@ export function normalizeConfig(raw) {
 }
 
 export function readConfig(rootDir = process.cwd()) {
-  const configPath = path.join(rootDir, 'config.yml');
-  if (!fs.existsSync(configPath)) {
-    throw new Error(`Missing config.yml at ${configPath}`);
-  }
-
-  const raw = parseYamlLite(fs.readFileSync(configPath, 'utf8'));
+  const source = readConfigSource(rootDir);
+  const raw = parseYamlLite(source);
   return normalizeConfig(raw);
+}
+
+export function readConfigSource(rootDir = process.cwd()) {
+  const configPath = path.join(rootDir, 'config.yml');
+  if (fs.existsSync(configPath)) return fs.readFileSync(configPath, 'utf8');
+  if (process.env.CONFIG?.trim()) return process.env.CONFIG;
+  throw new Error(`Missing config.yml at ${configPath} and CONFIG is not set`);
 }
 
 function publicNode(node) {
@@ -194,6 +212,8 @@ export function toPublicConfig(config, adminEnabled = false) {
     version: config.version,
     settings: {
       page_title: config.settings.page_title,
+      show_disk_outline: config.settings.show_disk_outline,
+      max_timeout_ms: config.settings.max_timeout_ms,
       check_interval_minutes: config.settings.check_interval_minutes,
       history_retention_days: config.settings.history_retention_days,
       history_limit: config.settings.history_limit,
@@ -215,6 +235,9 @@ export function toAdminPayload(config) {
   return {
     version: config.version,
     generatedAt: new Date().toISOString(),
+    settings: {
+      max_timeout_ms: config.settings.max_timeout_ms,
+    },
     infrastructure: config.infrastructure.map((infra) => ({
       id: infra.id,
       name: infra.name,

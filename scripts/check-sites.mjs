@@ -31,14 +31,18 @@ function readHistory() {
   }
 }
 
-function mergeRequest(defaultRequest, nodeRequest) {
-  return {
+function mergeRequest(defaultRequest, nodeRequest, maxTimeoutMs) {
+  const request = {
     ...defaultRequest,
     ...(nodeRequest ?? {}),
     headers: {
       ...(defaultRequest.headers ?? {}),
       ...(nodeRequest?.headers ?? {}),
     },
+  };
+  return {
+    ...request,
+    timeout_ms: Math.min(request.timeout_ms, maxTimeoutMs),
   };
 }
 
@@ -64,12 +68,12 @@ function tcpConnect(host, port, timeoutMs) {
   });
 }
 
-async function checkTcpNode(node, defaultRequest) {
+async function checkTcpNode(node, settings) {
   const host = node.check_host;
   const ports = node.server_ports ?? [];
   if (!host || ports.length === 0) return null;
 
-  const timeoutMs = mergeRequest(defaultRequest, node.request).timeout_ms;
+  const timeoutMs = mergeRequest(settings.request, node.request, settings.max_timeout_ms).timeout_ms;
   const results = await Promise.all(ports.map((port) => tcpConnect(host, port, timeoutMs)));
   const ok = results.every((result) => result.ok);
   const latencyMs = Math.max(...results.map((result) => result.latencyMs), 0);
@@ -83,11 +87,11 @@ async function checkTcpNode(node, defaultRequest) {
   };
 }
 
-async function checkHttpNode(node, defaultRequest) {
+async function checkHttpNode(node, settings) {
   const targetUrl = node.check_url || node.url;
   if (!targetUrl) return null;
 
-  const request = mergeRequest(defaultRequest, node.request);
+  const request = mergeRequest(settings.request, node.request, settings.max_timeout_ms);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), request.timeout_ms);
   const started = Date.now();
@@ -138,11 +142,11 @@ async function checkHttpNode(node, defaultRequest) {
   }
 }
 
-async function checkNode(node, defaultRequest) {
-  const httpResult = await checkHttpNode(node, defaultRequest);
+async function checkNode(node, settings) {
+  const httpResult = await checkHttpNode(node, settings);
   if (httpResult) return httpResult;
 
-  const tcpResult = await checkTcpNode(node, defaultRequest);
+  const tcpResult = await checkTcpNode(node, settings);
   if (tcpResult) return tcpResult;
 
   return {
@@ -179,7 +183,7 @@ const historyFile = readHistory();
 const checkedAt = new Date().toISOString();
 
 const entries = await runPool(nodes, config.settings.concurrency, async (node) => {
-  const entry = await checkNode(node, config.settings.request);
+  const entry = await checkNode(node, config.settings);
   console.log(`${node.id}: ${entry.status} (${entry.message})`);
   return [node.id, entry];
 });

@@ -20,6 +20,8 @@ concurrency:
 jobs:
   monitor-and-build:
     runs-on: ubuntu-latest
+    env:
+      CONFIG: ${{ secrets.CONFIG }}
 
     steps:
       - name: Check out source

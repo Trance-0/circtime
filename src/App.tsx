@@ -68,7 +68,7 @@ export default function App() {
         }
       })
       .catch((error) => {
-        console.warn('Using mock uptime data because configured data could not be loaded.', error);
+        console.warn('Configured uptime data could not be loaded.', error);
       });
 
     return () => {
@@ -93,6 +93,7 @@ export default function App() {
     <div className="app-shell">
       <main className="space-stage">
         <UptimeRadar3D
+          dataVersion={dataVersion}
           sortBy={sortBy}
           showNetwork
           selectedNodeId={selectedNodeId}

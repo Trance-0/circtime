@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "config:init": "node scripts/init-config.mjs",
     "predev": "node scripts/build-config.mjs",
     "dev": "vite",
     "prebuild": "node scripts/build-config.mjs",

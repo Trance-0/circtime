@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { readConfig, toAdminPayload, toPublicConfig } from './config-utils.mjs';
+import { readConfig, readConfigSource, toAdminPayload, toPublicConfig } from './config-utils.mjs';
 
 const rootDir = process.cwd();
 const publicDir = path.join(rootDir, 'public');
@@ -31,8 +31,7 @@ function encryptAdminPayload(payload, token) {
 }
 
 fs.mkdirSync(publicDir, { recursive: true });
-const configPath = path.join(rootDir, 'config.yml');
-const configHash = crypto.createHash('sha256').update(fs.readFileSync(configPath)).digest('hex');
+const configHash = crypto.createHash('sha256').update(readConfigSource(rootDir)).digest('hex');
 const config = readConfig(rootDir);
 const adminToken = process.env.CIRCTIME_ADMIN_TOKEN || config.settings.admin_token || '';
 const adminEnabled = adminToken.length > 0;
@@ -51,4 +50,4 @@ if (adminEnabled) {
   fs.rmSync(adminBundlePath);
 }
 
-console.log(`Wrote ${path.relative(rootDir, publicConfigPath)} from config.yml`);
+console.log(`Wrote ${path.relative(rootDir, publicConfigPath)} from config.yml or CONFIG`);

@@ -1,4 +1,4 @@
-import { setConfigHash, setPageTitle } from './dataStore';
+import { setConfigHash, setPageTitle, setRuntimeSettings } from './dataStore';
 import type {
   HistoryEntry,
   InfrastructureNode,
@@ -29,6 +29,8 @@ interface CirctimeConfig {
   config_hash?: string;
   settings?: {
     page_title?: string;
+    show_disk_outline?: boolean;
+    max_timeout_ms?: number;
   };
   infrastructure: ConfigInfrastructure[];
 }
@@ -48,54 +50,9 @@ async function fetchJson<T>(fileName: string): Promise<T | null> {
   return response.json() as Promise<T>;
 }
 
-function seedFromId(id: string): number {
-  return id.split('').reduce((seed, char) => ((seed * 33) ^ char.charCodeAt(0)) >>> 0, 2166136261);
-}
-
-function randomFor(seed: number) {
-  let state = seed || 1;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-}
-
-function fallbackStatus(rand: () => number): NodeStatus {
-  const roll = rand();
-  if (roll > 0.985) return 'down';
-  if (roll > 0.94) return 'degraded';
-  if (roll < 0.012) return 'unknown';
-  return 'up';
-}
-
-function generatedFallbackHistory(node: ConfigNode): HistoryEntry[] {
-  const rand = randomFor(seedFromId(`${node.id}:${node.name}`));
-  const now = Date.now();
-  const hourMs = 60 * 60 * 1000;
-  const dayMs = 24 * hourMs;
-  const timestamps: number[] = [];
-
-  for (let day = 365; day >= 8; day -= 1) timestamps.push(now - day * dayMs);
-  for (let hour = 7 * 24; hour >= 0; hour -= 1) timestamps.push(now - hour * hourMs);
-
-  return timestamps.map((timestamp) => {
-    const status = node.url ? fallbackStatus(rand) : 'unknown';
-    const latency = status === 'unknown' ? 0 : Math.round(80 + rand() * 620 + (status === 'degraded' ? 1200 + rand() * 900 : 0));
-    return {
-      timestamp,
-      status,
-      latencyMs: latency,
-      statusCode: status === 'down' ? 503 : status === 'unknown' ? 0 : 200,
-      message: node.url
-        ? 'Generated one-year placeholder history until GitHub Actions writes uptime-history.json'
-        : 'No URL configured in config.yml',
-    };
-  });
-}
-
 function historyFor(node: ConfigNode, history: HistoryFile | null): HistoryEntry[] {
   const entries = history?.checks?.[node.id];
-  return entries && entries.length > 0 ? entries : generatedFallbackHistory(node);
+  return entries && entries.length > 0 ? entries : [];
 }
 
 function computeUptime(history: HistoryEntry[]): number {
@@ -188,6 +145,10 @@ export async function loadConfiguredNodes(): Promise<MonitorNode[] | null> {
 
   setConfigHash(config.config_hash ?? 'configured-data');
   setPageTitle(config.settings?.page_title ?? 'circtime');
+  setRuntimeSettings({
+    showDiskOutline: config.settings?.show_disk_outline ?? true,
+    maxTimeoutMs: Math.max(1, config.settings?.max_timeout_ms ?? 5000),
+  });
   document.title = config.settings?.page_title ?? 'circtime';
   const history = await fetchJson<HistoryFile>('uptime-history.json');
   return buildNodes(config, history);
