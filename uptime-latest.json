@@ -1,0 +1,474 @@
+{
+  "generatedAt": "2026-10-11T00:44:28.665Z",
+  "checks": {
+    "on-migration-server": {
+      "timestamp": 1791679468740,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "on-migration-frp": {
+      "timestamp": 1791679468665,
+      "status": "down",
+      "latencyMs": 514,
+      "statusCode": 401,
+      "message": "HTTP 401"
+    },
+    "on-migration-ssh": {
+      "timestamp": 1791679468795,
+      "status": "up",
+      "latencyMs": 55,
+      "statusCode": 0,
+      "message": "TCP 45.77.71.189:22 open"
+    },
+    "on-migration-bt-panel": {
+      "timestamp": 1791679468739,
+      "status": "down",
+      "latencyMs": 5002,
+      "statusCode": 0,
+      "message": "Timed out after 5000ms"
+    },
+    "frp-gateway": {
+      "timestamp": 1791679473742,
+      "status": "down",
+      "latencyMs": 5001,
+      "statusCode": 0,
+      "message": "TCP 45.77.71.189:8800 timed out"
+    },
+    "wasteland": {
+      "timestamp": 1791679468795,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "wasteland-ssh": {
+      "timestamp": 1791679468849,
+      "status": "up",
+      "latencyMs": 54,
+      "statusCode": 0,
+      "message": "TCP 108.61.217.160:22 open"
+    },
+    "wasteland-1panel": {
+      "timestamp": 1791679468850,
+      "status": "down",
+      "latencyMs": 130,
+      "statusCode": 400,
+      "message": "HTTP 400"
+    },
+    "wasteland-openclaw": {
+      "timestamp": 1791679473980,
+      "status": "down",
+      "latencyMs": 5000,
+      "statusCode": 0,
+      "message": "TCP 108.61.217.160:8080 timed out"
+    },
+    "dgx-docker-machine": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "dgx-dashboard": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "dgx-jupyterlab": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "dgx-ssh": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "portainer-dgx": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "astrbot-web": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "astrbot-napcat-listener": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "astrbot-llonebot-listener": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "dify-full": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "x11vnc": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "rustdesk-tcp-21115": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "rustdesk-tcp-21116": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "rustdesk-tcp-21117": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "rustdesk-tcp-21118": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "rustdesk-tcp-21119": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "rustdesk-tcp-8000": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "koishi-web": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "minecraft-1-21": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "minecraft-modrinth-1-21-1": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nextcloud-https": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "casdoor": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "chatgpt-on-wechat": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "resume-jekyll-site": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "personal-context-protocol": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "hermes-dashboard": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "cashflow-portal": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "vllm": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "dgx-frpc": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-server": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-portainer-agent": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-nextcloud": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-portainer": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-netease": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-jellyfin": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-blog": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-ui": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-ssh": {
+      "timestamp": 1791679469179,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-openlist": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-immich": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-gitea": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-gitea-ssh": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "bitwarden-https": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "napcat-sol": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "napcat-egoist": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "llonebot-ans": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "nas-frpc": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "floating-windows-server": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "portainer-main": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "notenextra-main": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "chatgpt-on-wechat-main": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "minecraft-modrinth-main": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "floating-windows-frpc": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "cloudflare-dns": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "trance-0-root-dns": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "cloudflare-pages-sites": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "vercel-sites": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "github-pages-sites": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    },
+    "cloudflare-authoritative-dns": {
+      "timestamp": 1791679469180,
+      "status": "unknown",
+      "latencyMs": 0,
+      "statusCode": 0,
+      "message": "No check_url, url, or TCP server_port configured in config.yml"
+    }
+  }
+}
