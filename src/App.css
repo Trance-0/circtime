@@ -687,5 +687,26 @@ button,
 a,
 summary,
 input {
-  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="7" fill="none" stroke="rgba(238,244,255,0.85)" stroke-width="1.4"/><circle cx="14" cy="14" r="1.4" fill="rgba(238,244,255,0.75)"/></svg>') 14 14, crosshair;
+  cursor: url('./cursor.svg') 14 14, crosshair;
+}
+
+/* Embed mode (?embed=1): transparent full-viewport background widget. */
+html.circtime-embed,
+html.circtime-embed body,
+html.circtime-embed #root {
+  background: transparent;
+}
+
+/* No color-scheme here: a scheme that differs from the parent's makes
+   browsers paint an opaque backdrop behind the iframe. */
+
+.app-shell.embed {
+  background: transparent;
+  pointer-events: none;
+  user-select: none;
+}
+
+.app-shell.embed .radar-3d canvas {
+  cursor: default;
+  pointer-events: none;
 }

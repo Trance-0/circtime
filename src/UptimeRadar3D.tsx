@@ -22,7 +22,13 @@ interface Props {
   onTimeRange: (range: TimeRange) => void;
   onInspectingTime: (active: boolean) => void;
   onTimeCursor: (cursor: { index: number; total: number; label: string; timestamp?: number; phase: number; spacing: number; ticks: Array<{ key: string; label: string; offset: number }> }) => void;
+  /** Background-widget mode: transparent canvas, no input, radar fitted to the viewport. */
+  embed?: boolean;
+  theme?: 'light' | 'dark';
+  fit?: 'contain' | 'cover';
 }
+
+const EMBED_MARGIN = 1.04;
 
 interface SegmentDef {
   node: MonitorNode;
@@ -477,6 +483,9 @@ export function UptimeRadar3D({
   onTimeRange,
   onInspectingTime,
   onTimeCursor,
+  embed = false,
+  theme = 'dark',
+  fit = 'contain',
 }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -539,14 +548,19 @@ export function UptimeRadar3D({
     const mount = mountRef.current;
     if (!mount) return undefined;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    const light = theme === 'light';
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: embed,
+      powerPreference: embed ? 'low-power' : 'high-performance',
+    });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor(0x05070d, 1);
+    renderer.setClearColor(0x05070d, embed ? 0 : 1);
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x05070d, 7, 18);
+    scene.fog = embed ? null : new THREE.Fog(0x05070d, 7, 18);
     scene.background = null;
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500);
@@ -559,7 +573,7 @@ export function UptimeRadar3D({
     const initialQuaternion = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(DEFAULT_ROTATION_X, 0, 0),
     );
-    group.add(makeStarfield(getConfigHash()));
+    if (!embed) group.add(makeStarfield(getConfigHash()));
     scene.add(group);
     groupRef.current = group;
 
@@ -578,7 +592,7 @@ export function UptimeRadar3D({
 
     const core = new THREE.Mesh(
       new THREE.SphereGeometry(0.58, 96, 48),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: true, depthWrite: true }),
+      new THREE.MeshBasicMaterial({ color: light ? 0x2a3140 : 0xffffff, depthTest: true, depthWrite: true }),
     );
     core.renderOrder = 5;
     core.userData.center = true;
@@ -587,11 +601,13 @@ export function UptimeRadar3D({
 
     if (showDiskOutline) {
       const ringGroup = new THREE.Group();
-      for (let r = 0.72; r <= 2.62; r += 0.38) {
+      // In embed mode, keep the guides inside the radar so the fitted disc fills the viewport.
+      const maxGuideRadius = embed ? radarDiameter / 2 + 0.05 : 2.62;
+      for (let r = 0.72; r <= maxGuideRadius; r += 0.38) {
         const curve = new THREE.EllipseCurve(0, 0, r, r, 0, Math.PI * 2, false, 0);
         const points = curve.getPoints(160);
         const geometry = new THREE.BufferGeometry().setFromPoints(points.map((point) => new THREE.Vector3(point.x, point.y, -0.018)));
-        ringGroup.add(new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({ color: 0x526071, transparent: true, opacity: 0.14 })));
+        ringGroup.add(new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({ color: light ? 0x3a4352 : 0x526071, transparent: true, opacity: light ? 0.22 : 0.14 })));
       }
       group.add(ringGroup);
     }
@@ -604,8 +620,17 @@ export function UptimeRadar3D({
       const rect = mount.getBoundingClientRect();
       rendererRef.current.setSize(rect.width, rect.height, false);
       cameraRef.current.aspect = rect.width / Math.max(rect.height, 1);
-      cameraRef.current.position.z = DEFAULT_CAMERA_Z;
-      cameraRef.current.fov = Math.min(78, 42 * Math.max(1, 1.1 / cameraRef.current.aspect));
+      if (embed) {
+        // Fit the radar disc to the viewport: "contain" keeps it whole, "cover" fills the longer side.
+        const aspect = cameraRef.current.aspect;
+        const halfFov = THREE.MathUtils.degToRad(42 / 2);
+        const span = fit === 'cover' ? Math.max(1, aspect) : Math.min(1, aspect);
+        cameraRef.current.fov = 42;
+        cameraRef.current.position.z = ((radarDiameter / 2) * EMBED_MARGIN) / (Math.tan(halfFov) * span);
+      } else {
+        cameraRef.current.position.z = DEFAULT_CAMERA_Z;
+        cameraRef.current.fov = Math.min(78, 42 * Math.max(1, 1.1 / cameraRef.current.aspect));
+      }
       cameraRef.current.updateProjectionMatrix();
     }
 
@@ -914,14 +939,20 @@ export function UptimeRadar3D({
       event.preventDefault();
     }
 
-    renderer.domElement.addEventListener('pointerdown', onPointerDown);
-    renderer.domElement.addEventListener('pointermove', onPointerMove);
-    renderer.domElement.addEventListener('pointerup', onPointerUp);
-    renderer.domElement.addEventListener('pointercancel', onPointerCancel);
-    renderer.domElement.addEventListener('click', onClick);
-    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
-    renderer.domElement.addEventListener('contextmenu', onContextMenu);
+    if (!embed) {
+      renderer.domElement.addEventListener('pointerdown', onPointerDown);
+      renderer.domElement.addEventListener('pointermove', onPointerMove);
+      renderer.domElement.addEventListener('pointerup', onPointerUp);
+      renderer.domElement.addEventListener('pointercancel', onPointerCancel);
+      renderer.domElement.addEventListener('click', onClick);
+      renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+      renderer.domElement.addEventListener('contextmenu', onContextMenu);
+    }
     window.addEventListener('resize', resize);
+    // The canvas is sized by CSS; re-measure whenever the container changes
+    // size, not only on window resize (e.g. iframe or layout changes).
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => resize());
+    resizeObserver?.observe(mount);
     resize();
 
     let frame = 0;
@@ -1027,10 +1058,12 @@ export function UptimeRadar3D({
       renderer.domElement.removeEventListener('wheel', onWheel);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('resize', resize);
+      resizeObserver?.disconnect();
       renderer.dispose();
+      renderer.forceContextLoss();
       mount.removeChild(renderer.domElement);
     };
-  }, [maxTimeoutMs, onInspectingTime, onSelectNode, onTimeCursor, onTimeRange, onTooltip, radarDiameter, showDiskOutline]);
+  }, [embed, fit, maxTimeoutMs, onInspectingTime, onSelectNode, onTimeCursor, onTimeRange, onTooltip, radarDiameter, showDiskOutline, theme]);
 
   useEffect(() => {
     const group = groupRef.current;
@@ -1073,13 +1106,13 @@ export function UptimeRadar3D({
       if (showDiskOutline) {
         const edges = new THREE.EdgesGeometry(geometry, 20);
         mesh.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
-          color: 0xd7dde8,
+          color: theme === 'light' ? 0x2a3140 : 0xd7dde8,
           transparent: true,
-          opacity: 0.09,
+          opacity: theme === 'light' ? 0.14 : 0.09,
         })));
       }
     }
-  }, [maxTimeoutMs, segments, showDiskOutline]);
+  }, [maxTimeoutMs, segments, showDiskOutline, theme]);
 
   useEffect(() => {
     const historyGroup = historyGroupRef.current;

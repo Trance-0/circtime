@@ -213,6 +213,50 @@ url: ""
 ```
 
 
+## Embed Mode
+
+Append `?embed=1` to render only the radar as a background widget:
+
+```text
+index.html?embed=1&theme=system|light|dark&fit=contain|cover&refresh=60
+```
+
+- `theme`: `system` (default) follows `prefers-color-scheme`. A parent frame can switch it at runtime with `iframe.contentWindow.postMessage({ type: "circtime-theme", theme: "light" }, origin)`. Messages are accepted only from the parent window on the same origin, or from the origin passed as `parent_origin=`.
+- `fit`: `contain` (default) keeps the whole disc in view; `cover` fills the longer side.
+- `refresh`: seconds between data refreshes (default 60, minimum 15). Refreshes re-read `circtime-config.json` and `uptime-latest.json` and append new results in memory; the full history is fetched once per load or when the config changes.
+- In embed mode the page and canvas are transparent, settings, tooltips and panels are not rendered, and the canvas ignores input. Apply opacity and `pointer-events: none` on the parent iframe.
+
+The build uses relative asset paths (`base: './'`), so it can be served from any sub-path such as `/embed/circtime/` (keep the trailing slash). It loads only same-origin files: no fonts, CDNs, analytics, inline scripts, inline styles or `data:` URIs, so it runs under `Content-Security-Policy: default-src 'self'`. The optional DNS config generator in the settings menu calls public DNS and certificate-transparency APIs; it is not available in embed mode and is blocked by such a CSP.
+
+## Public-Safe Output
+
+For dashboards shown to anonymous viewers, publish sanitized data only:
+
+```bash
+CIRCTIME_PUBLIC_SAFE=1 npm run build   # no admin bundle; config has names, ids, groups only
+npm run check:sites
+npm run export:public -- dist          # writes sanitized JSON into dist and verifies it
+```
+
+`scripts/public-safe.mjs` keeps display names, ids, groups, dependency ids, status, latency, HTTP status codes and epoch timestamps. It drops URLs, hosts, IPs, ports, domains, raw check messages and admin data, and refuses to write a file that still matches a URL, loopback, IPv4, `host:port`, the admin token or any configured host.
+
+## Self-Hosted Monitor (Docker Compose)
+
+`deploy/compose.yml` runs a long-lived monitor that checks the configured URLs on `check_interval_minutes` and publishes a public-safe build:
+
+```bash
+cp config.sample.yml config.yml && chmod 600 config.yml   # then edit
+mkdir -p /srv/circtime/state /srv/circtime/dist && chmod 700 /srv/circtime/state
+echo "CIRCTIME_DATA=/srv/circtime" > deploy/.env           # ignored by Git
+docker compose -f deploy/compose.yml up -d
+```
+
+- Host networking, so loopback health URLs work. The container publishes and listens on no ports; serve `${CIRCTIME_DATA}/dist` read-only from your existing web server.
+- Runs as UID/GID 1000 (`CIRCTIME_UID`/`CIRCTIME_GID`) with a read-only root filesystem, no capabilities, and rotated logs.
+- `config.yml` is mounted read-only and never copied into the served directory. Raw history, `node_modules` and the build workspace stay in `${CIRCTIME_DATA}/state`, so history survives restarts.
+- The static app is rebuilt only when the source or `config.yml` changes; the sanitized JSON is rewritten atomically after every check.
+- The health check reports healthy while check cycles keep completing.
+
 ## Experimental DNS Config Generator
 
 Open the ESC menu and enter a root domain under **DNS config generator**. The analyzer runs in a separate Web Worker, queries public DNS and certificate-transparency records, groups shared CNAME/IP routes, and generates a downloadable `config.yml`. Treat reverse-proxy and host-machine classifications as heuristics and review the file before deployment.

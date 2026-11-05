@@ -9,8 +9,11 @@
     "dev": "vite",
     "prebuild": "node scripts/build-config.mjs",
     "build": "tsc && vite build",
+    "typecheck": "tsc",
+    "test": "node --test scripts/*.test.mjs",
     "preview": "vite preview",
     "check:sites": "node scripts/check-sites.mjs",
+    "export:public": "node scripts/export-public.mjs",
     "sync:dev": "node scripts/sync-dev.mjs"
   },
   "devDependencies": {

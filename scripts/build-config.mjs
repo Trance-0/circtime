@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { readConfig, readConfigSource, toAdminPayload, toPublicConfig } from './config-utils.mjs';
+import { sanitizeConfig, stringifyPublic } from './public-safe.mjs';
 
 const rootDir = process.cwd();
 const publicDir = path.join(rootDir, 'public');
@@ -33,14 +34,19 @@ function encryptAdminPayload(payload, token) {
 fs.mkdirSync(publicDir, { recursive: true });
 const configHash = crypto.createHash('sha256').update(readConfigSource(rootDir)).digest('hex');
 const config = readConfig(rootDir);
-const adminToken = process.env.CIRCTIME_ADMIN_TOKEN || config.settings.admin_token || '';
+// CIRCTIME_PUBLIC_SAFE=1 builds for anonymous viewers: no admin bundle and a
+// sanitized config with only names, ids, groups and display settings.
+const publicSafe = process.env.CIRCTIME_PUBLIC_SAFE === '1';
+const adminToken = publicSafe ? '' : process.env.CIRCTIME_ADMIN_TOKEN || config.settings.admin_token || '';
 const adminEnabled = adminToken.length > 0;
-const publicConfig = {
-  ...toPublicConfig(config, adminEnabled),
-  config_hash: configHash,
-};
+const publicConfig = publicSafe
+  ? sanitizeConfig(config)
+  : { ...toPublicConfig(config, adminEnabled), config_hash: configHash };
 
-fs.writeFileSync(publicConfigPath, `${JSON.stringify(publicConfig, null, 2)}\n`);
+fs.writeFileSync(
+  publicConfigPath,
+  publicSafe ? `${stringifyPublic(publicConfig)}\n` : `${JSON.stringify(publicConfig, null, 2)}\n`,
+);
 
 if (adminEnabled) {
   const adminBundle = encryptAdminPayload(toAdminPayload(config), adminToken);
