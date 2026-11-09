@@ -6,6 +6,7 @@ export type EmbedFit = 'contain' | 'cover';
 
 export interface EmbedOptions {
   embed: boolean;
+  monochrome: boolean;
   theme: ThemeChoice;
   fit: EmbedFit;
   refreshMs: number;
@@ -29,6 +30,7 @@ export function readEmbedOptions(search: string = window.location.search): Embed
   const refreshSeconds = Number(params.get('refresh') ?? DEFAULT_REFRESH_SECONDS);
   return {
     embed: isTruthy(params.get('embed')),
+    monochrome: isTruthy(params.get('monochrome')),
     theme: isThemeChoice(theme) ? theme : 'system',
     fit: params.get('fit') === 'cover' ? 'cover' : 'contain',
     refreshMs: Math.max(

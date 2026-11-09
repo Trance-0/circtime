@@ -307,3 +307,11 @@ scripts/
 ## License
 
 MIT
+
+## Embed theme and status colors
+
+`?embed=1&theme=dark` paints a black backdrop; `theme=light` paints white.
+Parent theme messages still work when `parent_origin` matches. Add
+`monochrome=1` for three status colors: red for unavailable/currently down or
+all failed observations, yellow for any error during the last 48 hours, and
+green otherwise. Normal identity/uptime colors remain the default.

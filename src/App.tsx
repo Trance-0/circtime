@@ -131,6 +131,7 @@ export default function App() {
             onTimeCursor={setTimeCursor}
             embed
             theme={theme}
+            monochrome={EMBED_OPTIONS.monochrome}
             fit={EMBED_OPTIONS.fit}
           />
         </main>

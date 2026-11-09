@@ -9,7 +9,7 @@
  * Produces HSL strings suitable for SVG fill/stroke.
  */
 
-import type { NodeStatus } from './types';
+import type { NodeStatus, MonitorNode } from './types';
 
 // ── Lightness by status ─────────────────────────────────────────────
 
@@ -98,4 +98,13 @@ export function historyColor(status: NodeStatus): string {
     case 'down':     return '#ef4444';
     case 'unknown':  return '#374151';
   }
+}
+
+/** Status-only palette: current outage wins, then any failure in the last 48h. */
+export function monochromeColor(node: Pick<MonitorNode, 'status' | 'history'>, now = Date.now()): string {
+  if (node.status === 'down' || node.status === 'unknown') return '#ef4444';
+  const recent = node.history.filter(entry => entry.timestamp >= now - 48 * 3600_000 && entry.timestamp <= now);
+  if (recent.length && recent.every(entry => entry.status === 'down' || entry.status === 'unknown')) return '#ef4444';
+  if (node.status === 'degraded' || recent.some(entry => entry.status !== 'up')) return '#f59e0b';
+  return '#22c55e';
 }
