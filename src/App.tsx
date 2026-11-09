@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SortBy, TimeRange, TooltipData } from './types';
 import { getNode, getPageTitle, setActiveNodes } from './dataStore';
-import { loadConfiguredNodes } from './configuredData';
+import { loadConfiguredNodes, refreshConfiguredNodes } from './configuredData';
+import { readEmbedOptions, useEmbedTheme } from './embed';
 import { Tooltip } from './Tooltip';
 import { AdminPanel } from './AdminPanel';
 import { AnalysisPanel } from './AnalysisPanel';
@@ -41,6 +42,8 @@ function TimeRuler({ active, cursor }: { active: boolean; cursor: TimeCursor }) 
     </div>
   );
 }
+const EMBED_OPTIONS = readEmbedOptions();
+
 export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
@@ -57,37 +60,84 @@ export default function App() {
     [selectedNodeId, dataVersion],
   );
 
+  const embed = EMBED_OPTIONS.embed;
+  const theme = useEmbedTheme(EMBED_OPTIONS);
+
   useEffect(() => {
     let cancelled = false;
 
+    function apply(nodes: Awaited<ReturnType<typeof loadConfiguredNodes>>) {
+      if (!cancelled && nodes) {
+        setActiveNodes(nodes);
+        setDataVersion((version) => version + 1);
+      }
+    }
+
     loadConfiguredNodes()
-      .then((nodes) => {
-        if (!cancelled && nodes) {
-          setActiveNodes(nodes);
-          setDataVersion((version) => version + 1);
-        }
-      })
+      .then(apply)
       .catch((error) => {
         console.warn('Configured uptime data could not be loaded.', error);
       });
 
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      refreshConfiguredNodes()
+        .then(apply)
+        .catch((error) => {
+          console.warn('Uptime data refresh failed.', error);
+        });
+    }, EMBED_OPTIONS.refreshMs);
+
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, []);
 
   useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('circtime-embed', embed);
+    root.dataset.theme = theme;
+  }, [embed, theme]);
+
+  useEffect(() => {
+    if (embed) return undefined;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') setSettingsOpen((open) => !open);
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [embed]);
 
   const handleSelectNode = useCallback((id: string | null) => {
     setSelectedNodeId(id);
     setTimeInspecting(id !== null);
   }, []);
+
+  if (embed) {
+    return (
+      <div className="app-shell embed" aria-hidden="true">
+        <main className="space-stage">
+          <UptimeRadar3D
+            dataVersion={dataVersion}
+            sortBy={sortBy}
+            showNetwork
+            selectedNodeId={null}
+            timeRange={timeRange}
+            onSelectNode={handleSelectNode}
+            onTooltip={setTooltip}
+            onTimeRange={setTimeRange}
+            onInspectingTime={setTimeInspecting}
+            onTimeCursor={setTimeCursor}
+            embed
+            theme={theme}
+            monochrome={EMBED_OPTIONS.monochrome}
+            fit={EMBED_OPTIONS.fit}
+          />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">

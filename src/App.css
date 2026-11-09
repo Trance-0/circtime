@@ -687,5 +687,36 @@ button,
 a,
 summary,
 input {
-  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="7" fill="none" stroke="rgba(238,244,255,0.85)" stroke-width="1.4"/><circle cx="14" cy="14" r="1.4" fill="rgba(238,244,255,0.75)"/></svg>') 14 14, crosshair;
+  cursor: url('./cursor.svg') 14 14, crosshair;
 }
+
+/* Embed mode (?embed=1): transparent full-viewport background widget. */
+html.circtime-embed,
+html.circtime-embed body,
+html.circtime-embed #root {
+  background: transparent;
+}
+
+/* No color-scheme here: a scheme that differs from the parent's makes
+   browsers paint an opaque backdrop behind the iframe. */
+
+.app-shell.embed {
+  background: transparent;
+  pointer-events: none;
+  user-select: none;
+}
+
+.app-shell.embed .radar-3d canvas {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* A fixed embed theme owns its backdrop instead of inheriting the iframe parent. */
+html.circtime-embed[data-theme="dark"],
+html.circtime-embed[data-theme="dark"] body,
+html.circtime-embed[data-theme="dark"] #root,
+html.circtime-embed[data-theme="dark"] .app-shell.embed { background: #000; color-scheme: dark; }
+html.circtime-embed[data-theme="light"],
+html.circtime-embed[data-theme="light"] body,
+html.circtime-embed[data-theme="light"] #root,
+html.circtime-embed[data-theme="light"] .app-shell.embed { background: #fff; color-scheme: light; }

@@ -31,6 +31,7 @@ interface CirctimeConfig {
     page_title?: string;
     show_disk_outline?: boolean;
     max_timeout_ms?: number;
+    history_limit?: number;
   };
   infrastructure: ConfigInfrastructure[];
 }
@@ -38,6 +39,15 @@ interface CirctimeConfig {
 interface HistoryFile {
   checks?: Record<string, HistoryEntry[]>;
 }
+
+interface LatestFile {
+  generatedAt?: number | string | null;
+  checks?: Record<string, HistoryEntry>;
+}
+
+let loadedConfig: CirctimeConfig | null = null;
+let loadedHistory: HistoryFile | null = null;
+let lastLatestAt: number | string | null | undefined;
 
 function publicUrl(fileName: string): string {
   const base = import.meta.env.BASE_URL || './';
@@ -142,6 +152,8 @@ function buildNodes(config: CirctimeConfig, history: HistoryFile | null): Monito
 export async function loadConfiguredNodes(): Promise<MonitorNode[] | null> {
   const config = await fetchJson<CirctimeConfig>('circtime-config.json');
   if (!config?.infrastructure?.length) return null;
+  loadedConfig = config;
+  lastLatestAt = undefined;
 
   setConfigHash(config.config_hash ?? 'configured-data');
   setPageTitle(config.settings?.page_title ?? 'circtime');
@@ -151,5 +163,37 @@ export async function loadConfiguredNodes(): Promise<MonitorNode[] | null> {
   });
   document.title = config.settings?.page_title ?? 'circtime';
   const history = await fetchJson<HistoryFile>('uptime-history.json');
-  return buildNodes(config, history);
+  loadedHistory = history ?? { checks: {} };
+  return buildNodes(config, loadedHistory);
+}
+
+/**
+ * Cheap periodic refresh: re-reads the small config and latest-check files and
+ * appends new results to the in-memory history instead of re-downloading the
+ * full history. Falls back to a full reload when the config changes. Returns
+ * null when nothing changed.
+ */
+export async function refreshConfiguredNodes(): Promise<MonitorNode[] | null> {
+  if (!loadedConfig || !loadedHistory) return loadConfiguredNodes();
+  const config = await fetchJson<CirctimeConfig>('circtime-config.json');
+  if (!config?.infrastructure?.length) return null;
+  if ((config.config_hash ?? '') !== (loadedConfig.config_hash ?? '')) return loadConfiguredNodes();
+
+  const latest = await fetchJson<LatestFile>('uptime-latest.json');
+  if (!latest?.checks || latest.generatedAt === lastLatestAt) return null;
+  lastLatestAt = latest.generatedAt;
+
+  const limit = Math.max(1, config.settings?.history_limit ?? 35040);
+  const checks = { ...(loadedHistory.checks ?? {}) };
+  let changed = false;
+  for (const [id, entry] of Object.entries(latest.checks)) {
+    const existing = checks[id] ?? [];
+    const last = existing[existing.length - 1];
+    if (!entry || (last && last.timestamp >= entry.timestamp)) continue;
+    checks[id] = [...existing, entry].slice(-limit);
+    changed = true;
+  }
+  if (!changed) return null;
+  loadedHistory = { ...loadedHistory, checks };
+  return buildNodes(loadedConfig, loadedHistory);
 }

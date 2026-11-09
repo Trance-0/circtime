@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { monochromeColor } from './statusColor';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { HistoryEntry, MonitorNode, SortBy, TimeRange, TooltipData } from './types';
 import {
@@ -11,460 +12,8 @@ import {
   getServicesFor,
 } from './dataStore';
 
-interface Props {
-  dataVersion: number;
-  sortBy: SortBy;
-  showNetwork: boolean;
-  selectedNodeId: string | null;
-  timeRange: TimeRange;
-  onSelectNode: (id: string | null) => void;
-  onTooltip: (data: TooltipData | null) => void;
-  onTimeRange: (range: TimeRange) => void;
-  onInspectingTime: (active: boolean) => void;
-  onTimeCursor: (cursor: { index: number; total: number; label: string; timestamp?: number; phase: number; spacing: number; ticks: Array<{ key: string; label: string; offset: number }> }) => void;
-}
-
-interface SegmentDef {
-  node: MonitorNode;
-  ring: 'infrastructure' | 'service' | 'network';
-  innerRadius: number;
-  outerRadius: number;
-  startAngle: number;
-  endAngle: number;
-  hue: number;
-}
-
-const TIME_RANGES: TimeRange[] = ['1h', '24h', '7d', '30d'];
-const SELECTED_HISTORY_SAMPLES = 560;
-const TOTAL_HISTORY_SAMPLES = 72;
-const HISTORY_WINDOW_RADIUS = 10;
-const MIN_TIME_STEP_MS = 60 * 1000;
-const MAX_TIME_STEP_MS = 366 * 24 * 60 * 60 * 1000;
-const DEFAULT_TIME_STEP_MS = 24 * 60 * 60 * 1000;
-const SCROLL_ZOOM_BASE = 1.22;
-const DEFAULT_CAMERA_Z = 6.1;
-const DEFAULT_ROTATION_X = 0;
-const HISTORY_LAYER_GAP = 0.09;
-const HISTORY_Z_PRESENT = -0.12;
-const LIGHTNESS_MIN = 0.1;
-const LIGHTNESS_MAX = 0.9;
-const INNER_RING_START = 0.68;
-const RING_GAP = 0.1;
-const RING_RADIAL_TRAVEL = 0.08;
-const INFRASTRUCTURE_THICKNESS_BASE = 0.42;
-const SERVICE_THICKNESS_BASE = 0.41;
-const NETWORK_THICKNESS_BASE = 0.18;
-const MAX_RADIAL_SCALE = 0.42 + 5 * 0.15 + 0.12;
-const INFRASTRUCTURE_BAND_WIDTH = INFRASTRUCTURE_THICKNESS_BASE * MAX_RADIAL_SCALE + RING_RADIAL_TRAVEL;
-const SERVICE_BAND_START = INNER_RING_START + INFRASTRUCTURE_BAND_WIDTH + RING_GAP;
-const SERVICE_BAND_WIDTH = SERVICE_THICKNESS_BASE * MAX_RADIAL_SCALE + RING_RADIAL_TRAVEL;
-const NETWORK_BAND_START = SERVICE_BAND_START + SERVICE_BAND_WIDTH + RING_GAP;
-const NETWORK_BAND_WIDTH = NETWORK_THICKNESS_BASE * MAX_RADIAL_SCALE + RING_RADIAL_TRAVEL;
-const FOCUSED_PLANAR_SCALE = 1.04;
-const FOCUSED_DEPTH_SCALE = 1.45;
-const FOCUS_EASING = 0.12;
-const RESOLUTION_STEPS_MS = [
-  60 * 1000,
-  5 * 60 * 1000,
-  15 * 60 * 1000,
-  30 * 60 * 1000,
-  60 * 60 * 1000,
-  3 * 60 * 60 * 1000,
-  6 * 60 * 60 * 1000,
-  12 * 60 * 60 * 1000,
-  24 * 60 * 60 * 1000,
-  2 * 24 * 60 * 60 * 1000,
-  7 * 24 * 60 * 60 * 1000,
-  14 * 24 * 60 * 60 * 1000,
-  30 * 24 * 60 * 60 * 1000,
-  90 * 24 * 60 * 60 * 1000,
-  366 * 24 * 60 * 60 * 1000,
-];
-
-function latencyLightness(latencyMs: number, status: MonitorNode['status'], maxTimeoutMs: number): number {
-  if (status === 'unknown') return 0.28;
-  if (status === 'down') return LIGHTNESS_MIN;
-  const ratio = THREE.MathUtils.clamp(Math.max(latencyMs, 0) / Math.max(maxTimeoutMs, 1), 0, 1);
-  return THREE.MathUtils.lerp(LIGHTNESS_MAX, LIGHTNESS_MIN, ratio);
-}
-
-function colorFor(node: MonitorNode, hue: number, maxTimeoutMs: number): THREE.Color {
-  const saturation = node.status === 'unknown'
-    ? 0.08
-    : THREE.MathUtils.lerp(0.18, 0.9, THREE.MathUtils.clamp(node.uptimePercent / 100, 0, 1));
-  const latency = node.history[node.history.length - 1]?.latencyMs ?? node.avgLatencyMs;
-  const lightness = latencyLightness(latency, node.status, maxTimeoutMs);
-  return new THREE.Color().setHSL(hue / 360, saturation, lightness);
-}
-
-function historyColor(entry: HistoryEntry, hue: number, maxTimeoutMs: number): THREE.Color {
-  const saturation = entry.status === 'unknown' ? 0.08 : entry.status === 'down' ? 0.24 : 0.72;
-  return new THREE.Color().setHSL(
-    hue / 360,
-    saturation,
-    latencyLightness(entry.latencyMs, entry.status, maxTimeoutMs),
-  );
-}
-
-function annularShape(innerRadius: number, outerRadius: number, startAngle: number, endAngle: number) {
-  const shape = new THREE.Shape();
-  const steps = Math.max(16, Math.ceil((endAngle - startAngle) * 36));
-
-  for (let i = 0; i <= steps; i += 1) {
-    const t = startAngle + ((endAngle - startAngle) * i) / steps;
-    const x = Math.cos(t) * outerRadius;
-    const y = Math.sin(t) * outerRadius;
-    if (i === 0) shape.moveTo(x, y);
-    else shape.lineTo(x, y);
-  }
-
-  for (let i = steps; i >= 0; i -= 1) {
-    const t = startAngle + ((endAngle - startAngle) * i) / steps;
-    shape.lineTo(Math.cos(t) * innerRadius, Math.sin(t) * innerRadius);
-  }
-
-  shape.closePath();
-  return shape;
-}
-
-function clampRenderPadding(value: number | undefined): number | undefined {
-  if (!Number.isFinite(value)) return undefined;
-  return THREE.MathUtils.clamp(Math.round(value ?? 0), 1, 5);
-}
-
-function stableRenderPadding(node: MonitorNode): number {
-  const fixed = clampRenderPadding(node.renderPadding);
-  if (fixed !== undefined) return fixed;
-  return 1 + Math.floor(stableUnit(node, 'render-padding') * 5);
-}
-
-function renderWeight(node: MonitorNode): number {
-  const size = stableRenderPadding(node);
-  return [0, 0.42, 0.72, 1.08, 1.58, 2.24][size];
-}
-
-function stableUnit(node: MonitorNode, salt: string): number {
-  return seededRandom(seedFromHash(`${getConfigHash()}:${node.id}:${salt}`))();
-}
-
-function angularInset(node: MonitorNode): number {
-  return 0.006 + stableUnit(node, 'angle-inset') * 0.008;
-}
-
-function radialThickness(node: MonitorNode, base: number): number {
-  const size = stableRenderPadding(node);
-  return base * (0.42 + size * 0.15 + stableUnit(node, 'width') * 0.12);
-}
-
-function aggregateServiceSize(infrastructureId: string, networkNode?: MonitorNode): number {
-  const services = getServicesFor(infrastructureId);
-  const dependentServices = networkNode
-    ? services.filter((service) => service.dependsOn.includes(networkNode.id))
-    : services;
-  const source = dependentServices.length > 0 ? dependentServices : services;
-  if (source.length === 0) return 3;
-  return source.reduce((sum, service) => sum + stableRenderPadding(service), 0) / source.length;
-}
-
-function derivedRadialThickness(node: MonitorNode, base: number): number {
-  if (node.type === 'service' || clampRenderPadding(node.renderPadding) !== undefined) {
-    return radialThickness(node, base);
-  }
-  const size = aggregateServiceSize(
-    node.type === 'infrastructure' ? node.id : node.infrastructureId,
-    node.type === 'network' ? node : undefined,
-  );
-  return base * (0.42 + size * 0.15 + stableUnit(node, 'width') * 0.12);
-}
-
-function radialBounds(node: MonitorNode, base: number, bandStart: number, bandWidth: number) {
-  const thickness = Math.min(derivedRadialThickness(node, base), bandWidth);
-  const availableTravel = Math.max(0, bandWidth - thickness);
-  const innerRadius = bandStart + stableUnit(node, 'radius') * availableTravel;
-  return { innerRadius, outerRadius: innerRadius + thickness };
-}
-
-function networkRenderWeight(node: MonitorNode, infrastructureId: string, siblingCount: number): number {
-  const fixed = clampRenderPadding(node.renderPadding);
-  if (fixed !== undefined) return renderWeight(node);
-  const services = getServicesFor(infrastructureId);
-  const dependents = services.filter((service) => service.dependsOn.includes(node.id));
-  if (dependents.length > 0) return dependents.reduce((sum, service) => sum + renderWeight(service), 0);
-  return Math.max(0.42, services.reduce((sum, service) => sum + renderWeight(service), 0) / Math.max(siblingCount, 1));
-}
-
-function insetAngles(node: MonitorNode, start: number, end: number) {
-  const inset = Math.min(angularInset(node), Math.max(0, (end - start) * 0.22));
-  return { startAngle: start + inset, endAngle: end - inset };
-}
-
-function computeSegments(sortBy: SortBy, showNetwork: boolean): SegmentDef[] {
-  const infras = [...getInfrastructures()];
-  if (sortBy === 'name') infras.sort((a, b) => a.name.localeCompare(b.name));
-  if (sortBy === 'uptime') infras.sort((a, b) => a.uptimePercent - b.uptimePercent);
-  if (sortBy === 'status') {
-    const order: Record<string, number> = { down: 0, degraded: 1, unknown: 2, up: 3 };
-    infras.sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2));
-  }
-
-  const globalServices = getInfrastructures()
-    .flatMap((infra) => getServicesFor(infra.id))
-    .sort((a, b) => a.id.localeCompare(b.id));
-  const serviceHues = new Map(
-    globalServices.map((service, index) => [service.id, Math.round((index / Math.max(globalServices.length, 1)) * 360)]),
-  );
-  const weights = infras.map((infra) => {
-    const services = getServicesFor(infra.id);
-    const network = showNetwork ? getNetworkFor(infra.id) : [];
-    const serviceWeight = services.reduce((sum, service) => sum + renderWeight(service), 0);
-    const networkWeight = network.reduce(
-      (sum, networkNode) => sum + networkRenderWeight(networkNode, infra.id, network.length),
-      0,
-    );
-    const base = Math.max(0.6, serviceWeight + networkWeight * 0.18);
-    return base;
-  });
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  const gap = 0.018;
-  const usable = Math.PI * 2 - gap * infras.length;
-  const segments: SegmentDef[] = [];
-  let cursor = -Math.PI / 2;
-
-  for (let i = 0; i < infras.length; i += 1) {
-    const infra = infras[i];
-    const span = (weights[i] / totalWeight) * usable;
-    const start = cursor;
-    const end = cursor + span;
-    const infraAngles = insetAngles(infra, start, end);
-    // Every node varies inside its ring's reserved envelope. The envelopes use
-    // the maximum possible size/width scale, so adjacent node types cannot overlap.
-    const infraBounds = radialBounds(
-      infra,
-      INFRASTRUCTURE_THICKNESS_BASE,
-      INNER_RING_START,
-      INFRASTRUCTURE_BAND_WIDTH,
-    );
-    segments.push({
-      node: infra,
-      ring: 'infrastructure',
-      innerRadius: infraBounds.innerRadius,
-      outerRadius: infraBounds.outerRadius,
-      startAngle: infraAngles.startAngle,
-      endAngle: infraAngles.endAngle,
-      hue: infra.hue ?? 0,
-    });
-
-    const services = getServicesFor(infra.id);
-    const serviceWeight = services.reduce((sum, service) => sum + renderWeight(service), 0);
-    let serviceAngle = start;
-    services.forEach((service) => {
-      const hue = serviceHues.get(service.id) ?? 0;
-      const serviceSpan = serviceWeight > 0 ? span * (renderWeight(service) / serviceWeight) : span;
-      const serviceStart = serviceAngle;
-      const serviceEnd = serviceStart + serviceSpan;
-
-      serviceAngle = serviceEnd;
-      const serviceAngles = insetAngles(service, serviceStart, serviceEnd);
-      const serviceBounds = radialBounds(
-        service,
-        SERVICE_THICKNESS_BASE,
-        SERVICE_BAND_START,
-        SERVICE_BAND_WIDTH,
-      );
-      segments.push({
-        node: service,
-        ring: 'service',
-        innerRadius: serviceBounds.innerRadius,
-        outerRadius: serviceBounds.outerRadius,
-        startAngle: serviceAngles.startAngle,
-        endAngle: serviceAngles.endAngle,
-        hue,
-      });
-    });
-
-    const network = showNetwork ? getNetworkFor(infra.id) : [];
-    const networkWeight = network.reduce(
-      (sum, networkNode) => sum + networkRenderWeight(networkNode, infra.id, network.length),
-      0,
-    );
-    let networkAngle = start;
-    network.forEach((networkNode) => {
-      const networkSpan = networkWeight > 0
-        ? span * (networkRenderWeight(networkNode, infra.id, network.length) / networkWeight)
-        : span;
-      const networkStart = networkAngle;
-      const networkEnd = networkStart + networkSpan;
-      networkAngle = networkEnd;
-      const networkAngles = insetAngles(networkNode, networkStart, networkEnd);
-      const networkBounds = radialBounds(
-        networkNode,
-        NETWORK_THICKNESS_BASE,
-        NETWORK_BAND_START,
-        NETWORK_BAND_WIDTH,
-      );
-      segments.push({
-        node: networkNode,
-        ring: 'network',
-        innerRadius: networkBounds.innerRadius,
-        outerRadius: networkBounds.outerRadius,
-        startAngle: networkAngles.startAngle,
-        endAngle: networkAngles.endAngle,
-        hue: networkNode.hue ?? infra.hue ?? 0,
-      });
-    });
-
-    cursor = end + gap;
-  }
-
-  return segments;
-}
-
-function seedFromHash(hash: string): number {
-  return hash.split('').reduce((seed, char) => ((seed * 33) ^ char.charCodeAt(0)) >>> 0, 2166136261);
-}
-
-function seededRandom(seed: number) {
-  let state = seed || 1;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
-}
-
-function clampTimeStep(stepMs: number): number {
-  return THREE.MathUtils.clamp(stepMs, MIN_TIME_STEP_MS, MAX_TIME_STEP_MS);
-}
-
-function nearestResolutionStep(stepMs: number): number {
-  const clamped = clampTimeStep(stepMs);
-  return RESOLUTION_STEPS_MS.reduce((nearest, candidate) =>
-    Math.abs(Math.log(candidate / clamped)) < Math.abs(Math.log(nearest / clamped)) ? candidate : nearest,
-  RESOLUTION_STEPS_MS[0]);
-}
-
-function sampleHistoryAtResolution(history: HistoryEntry[], stepMs: number, limit: number): HistoryEntry[] {
-  if (history.length === 0) return [];
-  const resolution = nearestResolutionStep(stepMs);
-  const buckets = new Map<number, HistoryEntry>();
-  for (const entry of history) {
-    buckets.set(Math.floor(entry.timestamp / resolution), entry);
-  }
-  const sampled = [...buckets.values()].sort((a, b) => a.timestamp - b.timestamp);
-  return sampled.slice(-Math.max(limit, 1));
-}
-
-function historyLayerZ(index: number, total: number, spacing = HISTORY_LAYER_GAP): number {
-  return HISTORY_Z_PRESENT - Math.max(total - 1 - index, 0) * spacing;
-}
-
-function nearestHistoryEntry(history: HistoryEntry[], timestamp: number): HistoryEntry | undefined {
-  if (history.length === 0) return undefined;
-  let low = 0;
-  let high = history.length - 1;
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    if (history[middle].timestamp < timestamp) low = middle + 1;
-    else high = middle;
-  }
-  const before = Math.max(0, low - 1);
-  return Math.abs(history[before].timestamp - timestamp) <= Math.abs(history[low].timestamp - timestamp)
-    ? history[before]
-    : history[low];
-}
-
-function applyGeometryColor(geometry: THREE.BufferGeometry, color: THREE.Color) {
-  const positions = geometry.getAttribute('position');
-  const colors = new Float32Array(positions.count * 3);
-  for (let index = 0; index < positions.count; index += 1) {
-    colors[index * 3] = color.r;
-    colors[index * 3 + 1] = color.g;
-    colors[index * 3 + 2] = color.b;
-  }
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-}
-
-function timeStepToLayerDistance(stepMs: number): number {
-  const normalized = Math.log(clampTimeStep(stepMs) / MIN_TIME_STEP_MS) / Math.log(MAX_TIME_STEP_MS / MIN_TIME_STEP_MS);
-  return THREE.MathUtils.lerp(2.85, 0.42, THREE.MathUtils.clamp(normalized, 0, 1));
-}
-
-function rulerSpacingPercent(stepMs: number): number {
-  const normalized = Math.log(clampTimeStep(stepMs) / MIN_TIME_STEP_MS) / Math.log(MAX_TIME_STEP_MS / MIN_TIME_STEP_MS);
-  return THREE.MathUtils.lerp(30, 9, THREE.MathUtils.clamp(normalized, 0, 1));
-}
-
-function formatRulerTime(timestamp: number | undefined, stepMs: number) {
-  if (!timestamp) return '';
-  const date = new Date(timestamp);
-  if (stepMs < 24 * 60 * 60 * 1000) {
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  }
-  const base = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-  const year = date.getFullYear();
-  return year === new Date().getFullYear() ? base : `${base} ${year}`;
-}
-
-function disposeRenderable(object: THREE.Object3D) {
-  const renderable = object as THREE.Object3D & {
-    geometry?: THREE.BufferGeometry;
-    material?: THREE.Material | THREE.Material[];
-  };
-  renderable.geometry?.dispose();
-  if (Array.isArray(renderable.material)) renderable.material.forEach((material) => material.dispose());
-  else renderable.material?.dispose();
-}
-
-function makeStarfield(hash: string): THREE.Points {
-  const rand = seededRandom(seedFromHash(`${hash}:stars`));
-  const count = 2400;
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  const color = new THREE.Color();
-
-  for (let i = 0; i < count; i += 1) {
-    const clustered = rand() < 0.62;
-    const arm = rand() < 0.72 ? 1 : -1;
-    const radius = clustered ? 4.2 + Math.pow(rand(), 0.62) * 10.8 : 7 + rand() * 12;
-    const spiral = radius * 0.34 * arm;
-    const angle = clustered
-      ? spiral + (rand() - 0.5) * (0.38 + radius * 0.035)
-      : rand() * Math.PI * 2;
-    const band = clustered ? (rand() - 0.5) * (0.22 + rand() * 0.9) : (rand() - 0.5) * 8;
-    const vertical = band + Math.sin(radius * 0.45 + angle) * 0.25;
-    const x = Math.cos(angle) * radius + (rand() - 0.5) * 0.9;
-    const y = Math.sin(angle) * radius + (rand() - 0.5) * 0.9;
-    const z = vertical + (rand() - 0.5) * (clustered ? 0.5 : 4.5);
-
-    positions[i * 3] = x;
-    positions[i * 3 + 1] = y;
-    positions[i * 3 + 2] = z;
-
-    const hue = rand() < 0.72 ? 0.6 + rand() * 0.08 : 0.08 + rand() * 0.08;
-    const saturation = clustered ? 0.18 + rand() * 0.32 : 0.05 + rand() * 0.16;
-    const lightness = clustered ? 0.48 + rand() * 0.42 : 0.32 + rand() * 0.36;
-    color.setHSL(hue, saturation, lightness);
-    colors[i * 3] = color.r;
-    colors[i * 3 + 1] = color.g;
-    colors[i * 3 + 2] = color.b;
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-  return new THREE.Points(
-    geometry,
-    new THREE.PointsMaterial({
-      size: 0.026,
-      sizeAttenuation: true,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.82,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
-}
+import { EMBED_MARGIN, TIME_RANGES, SELECTED_HISTORY_SAMPLES, TOTAL_HISTORY_SAMPLES, HISTORY_WINDOW_RADIUS, MIN_TIME_STEP_MS, MAX_TIME_STEP_MS, DEFAULT_TIME_STEP_MS, SCROLL_ZOOM_BASE, DEFAULT_CAMERA_Z, DEFAULT_ROTATION_X, HISTORY_LAYER_GAP, HISTORY_Z_PRESENT, LIGHTNESS_MIN, LIGHTNESS_MAX, INNER_RING_START, RING_GAP, RING_RADIAL_TRAVEL, INFRASTRUCTURE_THICKNESS_BASE, SERVICE_THICKNESS_BASE, NETWORK_THICKNESS_BASE, MAX_RADIAL_SCALE, INFRASTRUCTURE_BAND_WIDTH, SERVICE_BAND_START, SERVICE_BAND_WIDTH, NETWORK_BAND_START, NETWORK_BAND_WIDTH, FOCUSED_PLANAR_SCALE, FOCUSED_DEPTH_SCALE, FOCUS_EASING, RESOLUTION_STEPS_MS, latencyLightness, colorFor, historyColor, annularShape, clampRenderPadding, stableRenderPadding, renderWeight, stableUnit, angularInset, radialThickness, aggregateServiceSize, derivedRadialThickness, radialBounds, networkRenderWeight, insetAngles, computeSegments, seedFromHash, seededRandom, clampTimeStep, nearestResolutionStep, sampleHistoryAtResolution, historyLayerZ, nearestHistoryEntry, applyGeometryColor, timeStepToLayerDistance, rulerSpacingPercent, formatRulerTime, disposeRenderable, makeStarfield } from './radarGeometry';
+import type { Props, SegmentDef } from './radarGeometry';
 
 export function UptimeRadar3D({
   dataVersion,
@@ -477,6 +26,10 @@ export function UptimeRadar3D({
   onTimeRange,
   onInspectingTime,
   onTimeCursor,
+  embed = false,
+  theme = 'dark',
+  fit = 'contain',
+  monochrome = false,
 }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -539,15 +92,20 @@ export function UptimeRadar3D({
     const mount = mountRef.current;
     if (!mount) return undefined;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    const light = theme === 'light';
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: embed,
+      powerPreference: embed ? 'low-power' : 'high-performance',
+    });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor(0x05070d, 1);
+    renderer.setClearColor(0x05070d, embed ? 0 : 1);
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x05070d, 7, 18);
-    scene.background = null;
+    scene.fog = embed ? null : new THREE.Fog(0x05070d, 7, 18);
+    scene.background = embed ? new THREE.Color(theme === 'dark' ? '#000000' : '#ffffff') : null;
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500);
     camera.position.set(0, 0, DEFAULT_CAMERA_Z);
@@ -559,7 +117,7 @@ export function UptimeRadar3D({
     const initialQuaternion = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(DEFAULT_ROTATION_X, 0, 0),
     );
-    group.add(makeStarfield(getConfigHash()));
+    if (!embed) group.add(makeStarfield(getConfigHash()));
     scene.add(group);
     groupRef.current = group;
 
@@ -578,7 +136,7 @@ export function UptimeRadar3D({
 
     const core = new THREE.Mesh(
       new THREE.SphereGeometry(0.58, 96, 48),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: true, depthWrite: true }),
+      new THREE.MeshBasicMaterial({ color: light ? 0x2a3140 : 0xffffff, depthTest: true, depthWrite: true }),
     );
     core.renderOrder = 5;
     core.userData.center = true;
@@ -587,11 +145,13 @@ export function UptimeRadar3D({
 
     if (showDiskOutline) {
       const ringGroup = new THREE.Group();
-      for (let r = 0.72; r <= 2.62; r += 0.38) {
+      // In embed mode, keep the guides inside the radar so the fitted disc fills the viewport.
+      const maxGuideRadius = embed ? radarDiameter / 2 + 0.05 : 2.62;
+      for (let r = 0.72; r <= maxGuideRadius; r += 0.38) {
         const curve = new THREE.EllipseCurve(0, 0, r, r, 0, Math.PI * 2, false, 0);
         const points = curve.getPoints(160);
         const geometry = new THREE.BufferGeometry().setFromPoints(points.map((point) => new THREE.Vector3(point.x, point.y, -0.018)));
-        ringGroup.add(new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({ color: 0x526071, transparent: true, opacity: 0.14 })));
+        ringGroup.add(new THREE.LineLoop(geometry, new THREE.LineBasicMaterial({ color: light ? 0x3a4352 : 0x526071, transparent: true, opacity: light ? 0.22 : 0.14 })));
       }
       group.add(ringGroup);
     }
@@ -604,8 +164,17 @@ export function UptimeRadar3D({
       const rect = mount.getBoundingClientRect();
       rendererRef.current.setSize(rect.width, rect.height, false);
       cameraRef.current.aspect = rect.width / Math.max(rect.height, 1);
-      cameraRef.current.position.z = DEFAULT_CAMERA_Z;
-      cameraRef.current.fov = Math.min(78, 42 * Math.max(1, 1.1 / cameraRef.current.aspect));
+      if (embed) {
+        // Fit the radar disc to the viewport: "contain" keeps it whole, "cover" fills the longer side.
+        const aspect = cameraRef.current.aspect;
+        const halfFov = THREE.MathUtils.degToRad(42 / 2);
+        const span = fit === 'cover' ? Math.max(1, aspect) : Math.min(1, aspect);
+        cameraRef.current.fov = 42;
+        cameraRef.current.position.z = ((radarDiameter / 2) * EMBED_MARGIN) / (Math.tan(halfFov) * span);
+      } else {
+        cameraRef.current.position.z = DEFAULT_CAMERA_Z;
+        cameraRef.current.fov = Math.min(78, 42 * Math.max(1, 1.1 / cameraRef.current.aspect));
+      }
       cameraRef.current.updateProjectionMatrix();
     }
 
@@ -648,7 +217,7 @@ export function UptimeRadar3D({
         mesh.userData.targetOpacity = selectedId ? (isSelected ? 1 : 0.88) : 0.9;
         for (const material of materials) {
           if (node && material instanceof THREE.MeshBasicMaterial) {
-            material.color.copy(colorFor(node, hue, maxTimeoutMs));
+            material.color.copy(colorFor(node, hue, maxTimeoutMs, monochrome));
             material.depthTest = true;
             material.depthWrite = true;
             material.needsUpdate = true;
@@ -914,14 +483,20 @@ export function UptimeRadar3D({
       event.preventDefault();
     }
 
-    renderer.domElement.addEventListener('pointerdown', onPointerDown);
-    renderer.domElement.addEventListener('pointermove', onPointerMove);
-    renderer.domElement.addEventListener('pointerup', onPointerUp);
-    renderer.domElement.addEventListener('pointercancel', onPointerCancel);
-    renderer.domElement.addEventListener('click', onClick);
-    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
-    renderer.domElement.addEventListener('contextmenu', onContextMenu);
+    if (!embed) {
+      renderer.domElement.addEventListener('pointerdown', onPointerDown);
+      renderer.domElement.addEventListener('pointermove', onPointerMove);
+      renderer.domElement.addEventListener('pointerup', onPointerUp);
+      renderer.domElement.addEventListener('pointercancel', onPointerCancel);
+      renderer.domElement.addEventListener('click', onClick);
+      renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+      renderer.domElement.addEventListener('contextmenu', onContextMenu);
+    }
     window.addEventListener('resize', resize);
+    // The canvas is sized by CSS; re-measure whenever the container changes
+    // size, not only on window resize (e.g. iframe or layout changes).
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => resize());
+    resizeObserver?.observe(mount);
     resize();
 
     let frame = 0;
@@ -1027,10 +602,12 @@ export function UptimeRadar3D({
       renderer.domElement.removeEventListener('wheel', onWheel);
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('resize', resize);
+      resizeObserver?.disconnect();
       renderer.dispose();
+      renderer.forceContextLoss();
       mount.removeChild(renderer.domElement);
     };
-  }, [maxTimeoutMs, onInspectingTime, onSelectNode, onTimeCursor, onTimeRange, onTooltip, radarDiameter, showDiskOutline]);
+  }, [embed, fit, monochrome, maxTimeoutMs, onInspectingTime, onSelectNode, onTimeCursor, onTimeRange, onTooltip, radarDiameter, showDiskOutline, theme]);
 
   useEffect(() => {
     const group = groupRef.current;
@@ -1051,7 +628,7 @@ export function UptimeRadar3D({
       const geometry = new THREE.ExtrudeGeometry(shape, { depth: layerDepth, bevelEnabled: false });
       geometry.translate(0, 0, segment.ring === 'network' ? 0.05 : 0);
       const material = new THREE.MeshBasicMaterial({
-        color: colorFor(segment.node, segment.hue, maxTimeoutMs),
+        color: colorFor(segment.node, segment.hue, maxTimeoutMs, monochrome),
         transparent: true,
         opacity: 0.9,
         side: THREE.DoubleSide,
@@ -1073,13 +650,13 @@ export function UptimeRadar3D({
       if (showDiskOutline) {
         const edges = new THREE.EdgesGeometry(geometry, 20);
         mesh.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
-          color: 0xd7dde8,
+          color: theme === 'light' ? 0x2a3140 : 0xd7dde8,
           transparent: true,
-          opacity: 0.09,
+          opacity: theme === 'light' ? 0.14 : 0.09,
         })));
       }
     }
-  }, [maxTimeoutMs, segments, showDiskOutline]);
+  }, [maxTimeoutMs, segments, showDiskOutline, theme, monochrome]);
 
   useEffect(() => {
     const historyGroup = historyGroupRef.current;
